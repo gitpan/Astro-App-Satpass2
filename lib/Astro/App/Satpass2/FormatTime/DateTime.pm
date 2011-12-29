@@ -1,6 +1,6 @@
 package Astro::App::Satpass2::FormatTime::DateTime;
 
-use 5.006002;
+use 5.008;
 
 use strict;
 use warnings;
@@ -15,7 +15,7 @@ use DateTime;
 use DateTime::TimeZone;
 use POSIX ();
 
-our $VERSION = '0.000_33';
+our $VERSION = '0.000_34';
 
 sub format_datetime {
     my ( $self, $tplt, $time, $gmt ) = @_;

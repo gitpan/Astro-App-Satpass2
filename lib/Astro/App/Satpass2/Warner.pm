@@ -1,6 +1,6 @@
 package Astro::App::Satpass2::Warner;
 
-use 5.006002;
+use 5.008;
 
 use strict;
 use warnings;
@@ -23,7 +23,7 @@ our @CARP_NOT = ( qw{
     Astro::App::Satpass2::ParseTime::ISO8601
 } );
 
-our $VERSION = '0.000_33';
+our $VERSION = '0.000_34';
 
 sub new {
     my ( $class, @arg ) = @_;

@@ -1,6 +1,6 @@
 package Astro::App::Satpass2::Format::Template::Provider;
 
-use 5.006002;
+use 5.008;
 
 use strict;
 use warnings;
@@ -11,7 +11,7 @@ use Carp;
 
 use Template::Constants ();
 
-our $VERSION = '0.000_33';
+our $VERSION = '0.000_34';
 
 sub __satpass2_defined_templates {
     my ( $self ) = @_;
