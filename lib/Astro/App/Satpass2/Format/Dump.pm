@@ -8,13 +8,10 @@ use base qw{ Astro::App::Satpass2::Format };
 use Carp;
 use Astro::App::Satpass2::Utils qw{ load_package };
 
-our $VERSION = '0.000_35';
+our $VERSION = '0.000_36';
 
 my %dumper_hash = (
-    YAML => 'Dump',
-    'YAML::Syck' => 'Dump',
-    'YAML::XS' => 'Dump',
-    'YAML::Tiny' => 'Dump',
+    'YAML::Any' => 'Dump',
     'Data::Dumper' => 'Dumper',
     'JSON' => 'to_json',
 );
@@ -31,7 +28,7 @@ my %dumper_hash = (
 		$self->dumper( $dumper_default );
 	    } else {
 		$self->dumper(
-		    'YAML,YAML::Syck,YAML::XS,YAML::Tiny,Data::Dumper'
+		    'YAML::Any,Data::Dumper'
 		);
 		$dumper_default = $self->dumper();
 	    }
@@ -134,11 +131,10 @@ than one class name can be specified, separated by commas.
 
 The default is that obtained by setting
 
- $fmt->dumper( 'YAML,YAML::Syck,YAML::XS,YAML::Tiny,Data::Dumper' );
+ $fmt->dumper( 'YAML::Any,Data::Dumper' );
 
 The known dumper classes are L<Data::Dumper|Data::Dumper>, L<JSON|JSON>,
-L<YAML|YAML>, L<YAML::Syck|YAML::Syck>, L<YAML::Tiny|YAML::Tiny>, and
-L<YAML::XS|YAML::XS>.
+and L<YAML::Any|YAML::Any>.
 
 =head1 SUPPORT
 
@@ -151,7 +147,7 @@ Thomas R. Wyant, III F<wyant at cpan dot org>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2010-2011 by Thomas R. Wyant, III
+Copyright (C) 2010-2012 by Thomas R. Wyant, III
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl 5.10.0. For more details, see the full text

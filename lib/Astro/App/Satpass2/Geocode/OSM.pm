@@ -11,7 +11,7 @@ use Astro::App::Satpass2::Utils qw{ instance };
 use Carp;
 use Geo::Coder::OSM;
 
-our $VERSION = '0.000_35';
+our $VERSION = '0.000_36';
 
 use constant GEOCODER_CLASS => 'Geo::Coder::OSM';
 
@@ -63,7 +63,7 @@ Astro::App::Satpass2::Geocode::OSM - Wrapper for Geo::Coder::OSM
 =head1 SYNOPSIS
 
  use Astro::App::Satpass2::Geocode::OSM;
- use YAML;
+ use YAML::Any;
  
  my $gc = Astro::App::Satpass2::Geocode::OSM->new();
  print Dump( $gc->geocode( '10 Downing St, London England' );
@@ -115,7 +115,7 @@ Thomas R. Wyant, III F<wyant at cpan dot org>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2011 by Thomas R. Wyant, III
+Copyright (C) 2011-2012 by Thomas R. Wyant, III
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl 5.10.0. For more details, see the full text

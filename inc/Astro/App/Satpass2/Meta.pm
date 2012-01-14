@@ -45,6 +45,7 @@ sub requires {
 	'File::Glob'		=> 0,
 	'File::HomeDir'		=> 0,
 	'File::Temp'		=> 0,
+	'IO::File'		=> 1.14,
 	'IPC::System::Simple'	=> 0,
 ##	'Params::Util'		=> 0.250,
 	'POSIX'			=> 0,
@@ -75,7 +76,7 @@ Astro::App::Satpass2::Meta - Information needed to build Astro::App::Satpass2
  use lib qw{ inc };
  use Astro::App::Satpass2::Meta;
  my $meta = Astro::App::Satpass2::Meta->new();
- use YAML;
+ use YAML::Any;
  print "Required modules:\n", Dump(
      $meta->requires() );
 
@@ -160,7 +161,7 @@ Thomas R. Wyant, III F<wyant at cpan dot org>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2010-2011 by Thomas R. Wyant, III
+Copyright (C) 2010-2012 by Thomas R. Wyant, III
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl 5.10.0. For more details, see the full text

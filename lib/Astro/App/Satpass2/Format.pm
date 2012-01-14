@@ -10,7 +10,7 @@ use Clone ();
 use Astro::App::Satpass2::FormatTime;
 use Astro::App::Satpass2::Utils qw{ load_package };
 
-our $VERSION = '0.000_35';
+our $VERSION = '0.000_36';
 
 use constant DEFAULT_LOCAL_COORD => 'azel_rng';
 
@@ -586,8 +586,8 @@ The following other methods are provided.
 
 =head3 config
 
- use YAML;
- print Dump ( $pt->config( changes => 1 );
+ use YAML::Any;
+ print Dump ( $pt->config( changes => 1 ) );
 
 This method retrieves the configuration of the formatter as an array of
 array references. The first element of each array reference is a method
@@ -676,7 +676,7 @@ Thomas R. Wyant, III F<wyant at cpan dot org>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2010-2011 by Thomas R. Wyant, III
+Copyright (C) 2010-2012 by Thomas R. Wyant, III
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl 5.10.0. For more details, see the full text

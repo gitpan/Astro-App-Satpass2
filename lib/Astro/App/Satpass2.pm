@@ -25,9 +25,8 @@ use File::Glob qw{ :glob };
 use File::HomeDir;
 use File::Temp;
 use Getopt::Long;
-use IO::File;
+use IO::File 1.14;
 use IO::Handle;
-use IPC::System::Simple qw{ capturex };
 use POSIX qw{ floor };
 use Scalar::Util qw{ blessed openhandle };
 use Text::Abbrev;
@@ -35,25 +34,50 @@ use Text::ParseWords ();	# Used only for {level1} stuff.
 
 use constant ASTRO_SPACETRACK_VERSION => 0.050;
 
-my ( $got_time_hires, $got_astro_spacetrack );
-
 BEGIN {
-
-    $got_time_hires = load_package( 'Time::HiRes' );
-    $got_astro_spacetrack = load_package( 'Astro::SpaceTrack' ) && eval {
-	Astro::SpaceTrack->VERSION( ASTRO_SPACETRACK_VERSION );
+    eval {
+	load_package( 'Time::y2038' )
+	    and Time::y2038->import();
 	1;
-    };
-
-    load_package( 'Time::y2038' )
-	and Time::y2038->import()
+    }
 	or do {
 	    require Time::Local;
 	    Time::Local->import();
 	};
 }
 
-our $VERSION = '0.000_35';
+our $VERSION = '0.000_36';
+
+# The following 'cute' code is so that we do not determine whether we
+# actually have optional modules until we really need them, and yet do
+# not repeat the process once it is done.
+
+my $have_time_hires;
+$have_time_hires = sub {
+    my $value = load_package( 'Time::HiRes' );
+    $have_time_hires = sub { return $value };
+    return $value;
+};
+
+my $have_astro_spacetrack;
+$have_astro_spacetrack = sub {
+    my $value = load_package( 'Astro::SpaceTrack' ) && eval {
+	Astro::SpaceTrack->VERSION( ASTRO_SPACETRACK_VERSION );
+	1;
+    };
+    $have_astro_spacetrack = sub { $value };
+    return $value;
+};
+
+my $default_geocoder;
+$default_geocoder = sub {
+    my $value =
+	load_package( 'Astro::App::Satpass2::Geocode::Geocoder::US' ) ||
+	load_package( 'Astro::App::Satpass2::Geocode::OSM' ) ||
+	load_package( 'Astro::App::Satpass2::Geocode::TomTom' );
+    $default_geocoder = sub { return $value };
+    return $value;
+};
 
 my $interrupted = 'Interrupted by user.';
 
@@ -123,11 +147,6 @@ my %twilight_abbr = abbrev (keys %twilight_def);
     }
 }
 
-my $default_geocoder =
-    load_package( 'Astro::App::Satpass2::Geocode::Geocoder::US' ) ||
-    load_package( 'Astro::App::Satpass2::Geocode::OSM' ) ||
-    load_package( 'Astro::App::Satpass2::Geocode::TomTom' );
-
 my %mutator = (
     appulse => \&_set_angle,
     autoheight => \&_set_unmodified,
@@ -194,12 +213,14 @@ my %mutator = (
 my %accessor = (
     date_format => \&_get_formatter_attribute,
     desired_equinox_dynamical => \&_get_formatter_attribute,
+    geocoder => \&_get_geocoder,
     gmt => \&_get_formatter_attribute,
     lit => sub {
 	return $_[0]->get( 'edge_of_earths_shadow' ) ? 1 : 0;
     },
     local_coord => \&_get_formatter_attribute,
     perltime => \&_get_time_parser_attribute,
+    spacetrack => \&_get_spacetrack,
     time_format => \&_get_formatter_attribute,
     tz => \&_get_time_parser_attribute,
     warning => \&_get_warner_attribute,
@@ -256,7 +277,7 @@ my %static = (
     flare_mag_day => -6,
     flare_mag_night => 0,
     formatter => 'Astro::App::Satpass2::Format::Template',	# Formatter class.
-    geocoder => $default_geocoder,	# Geocoder class
+##  geocoder => $default_geocoder->(),	# Geocoder class set when accessed
     geometric => 1,
     height => undef,		# meters
 #   initfile => undef,		# Set by init()
@@ -271,7 +292,7 @@ my %static = (
     prompt => 'satpass2> ',
     simbad_url => 'simbad.u-strasbg.fr',
     singleton => 0,
-#   spacetrack => undef,	# Astro::SpaceTrack object set in new().
+#   spacetrack => undef,	# Astro::SpaceTrack object set when accessed
 #   stdout => undef,		# Set to stdout in new().
     time_parser => 'Astro::App::Satpass2::ParseTime',	# Time parser class.
     twilight => 'civil',
@@ -301,15 +322,11 @@ sub new {
 	exists $args{$name} or $args{$name} = $static{$name};
     }
 
-    not exists $args{spacetrack}
-	and $got_astro_spacetrack
-	and $args{spacetrack} = $self->_get_spacetrack_default();
-
     my $warner = $self->{_warner} = Astro::App::Satpass2::Warner->new(
 	warning => delete $args{warning}
     );
 
-    foreach my $name ( qw{ formatter geocoder time_parser } ) {
+    foreach my $name ( qw{ formatter time_parser } ) {
 	$self->set( $name => delete $args{$name} );
 	my $obj;
 	$obj = $self->get( $name )
@@ -322,8 +339,8 @@ sub new {
 }
 
 sub alias : Verb() {
-    my ( $self, @args ) = @_;
-    ( my $opt, @args ) = $self->_getopt( @args );
+    my ( $self, $opt, @args ) = _arguments( @_ );
+
     if ( @args ) {
 	Astro::Coord::ECI::TLE->alias( @args );
 	return;
@@ -337,10 +354,10 @@ sub alias : Verb() {
     }
 }
 
-sub almanac : Verb( choose=s@ dump! horizon|rise|set! transit! 
-    twilight! quarter! ) {
-    my ($self, @args) = @_;
-    (my $opt, @args) = $self->_getopt(@args);
+# Attributes must all be on one line to process correctly under Perl
+# 5.8.8.
+sub almanac : Verb( choose=s@ dump! horizon|rise|set! transit! twilight! quarter! ) {
+    my ( $self, $opt, @args ) = _arguments( @_ );
     _apply_boolean_default(
 	$opt, 0, qw{ horizon transit twilight quarter } );
 
@@ -396,27 +413,26 @@ sub almanac : Verb( choose=s@ dump! horizon|rise|set! transit!
 }
 
 sub begin : Verb() {
-    my ( $self, @args ) = @_;
-    ( my $opt, @args ) = $self->_getopt( @args );
+    my ( $self, $opt, @args ) = _arguments( @_ );
     $self->_frame_push(
 	begin => @args ? \@args : $self->{frame}[-1]{args});
     return;
 }
 
 sub cd : Verb() {
-    my ( $self, @args ) = @_;
-    ( my $opt, my $dir ) = $self->_getopt( @args );
+    my ( $self, $opt, $dir ) = _arguments( @_ );
     if (defined($dir)) {
 	chdir $dir or $self->_wail("Can not cd to $dir: $!");
     } else {
-	chdir or $self->_wail("Can not cd to home: $!");
+	chdir File::HomeDir->my_home()
+	    or $self->_wail("Can not cd to home: $!");
     }
     return;
 }
 
 sub choose : Verb( epoch=s ) {
-    my ($self, @args) = @_;
-    (my $opt, @args) = $self->_getopt(@args);
+    my ( $self, $opt, @args ) = _arguments( @_ );
+
     if ($opt->{epoch}) {
 	my $epoch = $self->_parse_time($opt->{epoch});
 	$self->{bodies} = [
@@ -431,7 +447,7 @@ sub choose : Verb( epoch=s ) {
 }
 
 sub clear : Verb() {
-    my $self = shift;
+    my ( $self, $opt, @args ) = _arguments( @_ );
     @{$self->{bodies}} = ();
     return;
 }
@@ -458,15 +474,13 @@ sub dispatch {
 }
 
 sub drop : Verb() {
-    my ( $self, @args ) = @_;
-    ( my $opt, @args ) = $self->_getopt( @args );
+    my ( $self, $opt, @args ) = _arguments( @_ );
     $self->{bodies} = _choose({invert => 1}, \@args, $self->{bodies});
     return;
 }
 
 sub dump : method Verb() {	## no critic (ProhibitBuiltInHomonyms)
-    my ( $self, @args ) = @_;
-    ( my $opt, my $arg ) = $self->_getopt( @args );
+    my ( $self, $opt, $arg ) = _arguments( @_ );
     if ( defined $arg && 'twilight' eq $arg ) {
 	return <<"EOD";
 twilight => @{[ $self->{twilight} ]}
@@ -482,15 +496,15 @@ EOD
 }
 
 sub echo : Verb( n! ) {
-    my ($self, @args) = @_;
-    (my $opt, @args) = $self->_getopt(@args);
+    my ( $self, $opt, @args ) = _arguments( @_ );
     my $output = join( ' ', @args );
     $opt->{n} or $output .= "\n";
     return $output;
 }
 
 sub end : Verb() {
-    my $self = shift;
+    my ( $self, $opt, @args ) = _arguments( @_ );
+
     $self->{frame}[-1]{type} eq 'begin'
 	or $self->_wail("End without begin");
     $self->_frame_pop();
@@ -612,7 +626,7 @@ sub _execute_output {
 }
 
 sub exit : method Verb() {	## no critic (ProhibitBuiltInHomonyms)
-    my $self = shift;
+    my ( $self, $opt, @args ) = _arguments( @_ );
 
     $self->_frame_pop(1);	# Leave only the inital frame.
 
@@ -626,8 +640,7 @@ sub exit : method Verb() {	## no critic (ProhibitBuiltInHomonyms)
 }
 
 sub export : Verb() {
-    my ( $self, @args ) = @_;
-    ( my $opt, my $name, @args ) = $self->_getopt( @args );
+    my ( $self, $opt, $name, @args ) = _arguments( @_ );
     if ($mutator{$name}) {
 	@args and $self->set ($name, shift @args);
 	$self->{exported}{$name} = 1;
@@ -638,11 +651,11 @@ sub export : Verb() {
     return;
 }
 
-sub flare : Verb( algorithm=s am! choose=s@ day! dump! pm!
-    questionable|spare! quiet! tz|zone=s )
+# Attributes must all be on one line to process correctly under Perl
+# 5.8.8.
+sub flare : Verb( algorithm=s am! choose=s@ day! dump! pm! questionable|spare! quiet! tz|zone=s )
 {
-    my ($self, @args) = @_;
-    (my $opt, @args) = $self->_getopt(@args);
+    my ( $self, $opt, @args ) = _arguments( @_ );
     $self->_parse_time_reset();
     my $pass_start = $self->_parse_time (
 	shift @args, $self->_get_today_noon());
@@ -718,8 +731,7 @@ sub formatter : Verb() {
 }
 
 sub geocode : Verb( debug! ) {
-    my ( $self, @args ) = @_;
-    my ( $opt, $loc ) = $self->_getopt( @args );
+    my ( $self, $opt, $loc ) = _arguments( @_ );
 
     my $set_loc;
     if ( defined $loc ) {
@@ -728,8 +740,7 @@ sub geocode : Verb( debug! ) {
 	$loc = $self->get( 'location' );
     }
 
-    my $geocoder = $self->{geocoder}
-	or $self->_wail( 'No geocoder loaded' );
+    my $geocoder = $self->_helper_get_object( 'geocoder' );
 
     my @rslt = $geocoder->geocode( $loc );
 
@@ -755,8 +766,7 @@ sub geocode : Verb( debug! ) {
 }
 
 sub geodetic : Verb() {
-    my ( $self, @args ) = @_;
-    my ( $opt, $name, $lat, $lon, $alt ) = $self->_getopt( @args );
+    my ( $self, $opt, $name, $lat, $lon, $alt ) = _arguments( @_ );
     @_ == 5 or $self->_wail( "Want exactly four arguments" );
     my $body = Astro::Coord::ECI::TLE->new(
 	name => $name,
@@ -779,8 +789,7 @@ sub get {
 }
 
 sub height : Verb( debug! ) {
-    my ($self, @args) = @_;
-    return _height_us($self, $self->_getopt(@args));
+    return _height_us( _arguments( @_ ) );
 }
 
 sub _height_us {
@@ -821,8 +830,7 @@ sub _height_us {
 	utils => 'Astro::Coord::ECI::Utils',
     );
     sub help : Verb() {
-	my ( $self, @args ) = @_;
-	my ( $opt, $arg ) = $self->_getopt( @args );
+	my ( $self, $opt, $arg ) = _arguments( @_ );
 	if ( my $cmd = $self->get( 'webcmd' ) ) {
 	    $self->system( $cmd,
 		"http://search.cpan.org/~wyant/Astro-App-Satpass2-$VERSION/");
@@ -900,9 +908,7 @@ sub init {
 
 
 sub initfile : Verb( create-directory! quiet! ) {
-
-    my ( $self, @args ) = @_;
-    (my $opt, @args) = $self->_getopt(@args);
+    my ( $self, $opt, @args ) = _arguments( @_ );
 
     my $init_dir = File::HomeDir->my_dist_config(
 	'Astro-App-Satpass2', { create => $opt->{'create-directory'} } );
@@ -938,8 +944,7 @@ sub _init_file_01 {
 }
 
 sub list : Verb( choose=s@ ) {
-    my ($self, @args) = @_;
-    (my $opt, @args) = $self->_getopt(@args);
+    my ( $self, $opt, @args ) = _arguments( @_ );
 
     my $bodies = $self->{bodies};
     $opt->{choose} and $bodies = _choose($opt->{choose}, $bodies);
@@ -969,8 +974,7 @@ sub _glob_files {
 }
 
 sub load : Verb( verbose! ) {
-    my ( $self, @names ) = @_;
-    ( my $opt, @names ) = $self->_getopt( @names );
+    my ( $self, $opt, @names ) = _arguments( @_ );
     @names or $self->_wail( 'No file names specified' );
 
 =begin comment
@@ -994,18 +998,21 @@ sub load : Verb( verbose! ) {
 }
 
 sub localize : Verb( all|except! ) {
-    my ($self, @args) = @_;
-    (my $opt, @args) = $self->_getopt(@args);
+    my ( $self, $opt, @args ) = _arguments( @_ );
+
     foreach my $name ( @args ) {
 	$self->_attribute_exists( $name );
     }
+
     if ( $opt->{all} ) {
 	my %except = map { $_ => 1 } @args;
 	@args = grep { ! $except{$_} } sort keys %mutator;
     }
+
     foreach my $name ( @args ) {
 	$self->_localize( $name );
     }
+
     return;
 }
 
@@ -1030,8 +1037,7 @@ sub _localize {
 }
 
 sub location : Verb( dump! ) {
-    my ( $self, @args ) = @_;
-    (my $opt, @args) = $self->_getopt(@args);
+    my ( $self, $opt ) = _arguments( @_ );
     return $self->_format_data(
 	location => $self->_get_station(), $opt );
 }
@@ -1051,8 +1057,7 @@ sub location : Verb( dump! ) {
     }
 
     sub macro : Verb() {
-	my ( $self, @args ) = @_;
-	( my $opt, @args ) = $self->_getopt( @args );
+	my ( $self, $opt, @args ) = _arguments( @_ );
 	my $cmd;
 	if (!@args) {
 	    $cmd = 'brief';
@@ -1097,13 +1102,12 @@ sub location : Verb( dump! ) {
 
 }
 
-sub pass : Verb( choose=s@ appulse! chronological! dump! 
-    events! horizon|rise|set! illumination! quiet! 
-    transit|maximum|culmination! )
+# Attributes must all be on one line to process correctly under Perl
+# 5.8.8.
+sub pass : Verb( choose=s@ appulse! chronological! dump! events! horizon|rise|set! illumination! quiet! transit|maximum|culmination! )
 {
-    my ($self, @args) = @_;
+    my ( $self, $opt, @args ) = _arguments( @_ );
 
-    (my $opt, @args) = $self->_getopt(@args);
     _apply_boolean_default(
 	$opt, 0, qw{ horizon illumination transit appulse } );
     $self->_parse_time_reset();
@@ -1203,8 +1207,8 @@ sub pass : Verb( choose=s@ appulse! chronological! dump!
 }
 
 sub phase : Verb() {
-    my ( $self, @args ) = @_;
-    (my $opt, @args) = $self->_getopt(@args);
+    my ( $self, $opt, @args ) = _arguments( @_ );
+
     $self->_parse_time_reset();
     my $time = $self->_parse_time (shift @args, time );
 
@@ -1221,9 +1225,7 @@ sub phase : Verb() {
 }
 
 sub position : Verb( choose=s@ questionable|spare! quiet! ) {
-    my ($self, @args) = @_;
-
-    my ( $opt, $time ) = $self->_getopt(@args);
+    my ( $self, $opt, $time ) = _arguments( @_ );
 
     if ( defined $time ) {
 	$self->_parse_time_reset();
@@ -1281,8 +1283,8 @@ sub position : Verb( choose=s@ questionable|spare! quiet! ) {
 }
 
 sub quarters : Verb( choose=s@ dump! ) {
-    my ($self, @args) = @_;
-    (my $opt, @args) = $self->_getopt(@args);
+    my ( $self, $opt, @args ) = _arguments( @_ );
+
     $self->_parse_time_reset();
     my $start = $self->_parse_time ($args[0], $self->_get_today_midnight());
     my $end = $self->_parse_time ($args[1] || '+30');
@@ -1389,8 +1391,8 @@ SATPASS2_EXECUTE:
 }
 
 sub save : Verb( changes! overwrite! ) {
-    my ($self, @args) = @_;
-    my ($opt, $fn) = $self->_getopt(@args);
+    my ( $self, $opt, $fn ) = _arguments( @_ );
+
     defined $fn or $fn = $self->initfile( { 'create-directory' => 1 } );
     chomp $fn;	# because initfile() adds a newline for printing
     if ($fn ne '-' && -e $fn) {
@@ -1442,14 +1444,13 @@ EOD
     return $output;
 }
 
-sub set : Verb() {	## no critic (ProhibitAmbiguousNames)
-    my ( $self, @args ) = @_;
-    ( my $opt, @args ) = $self->_getopt( @args );
+sub set : Verb() {
+    my ( $self, $opt, @args ) = _arguments( @_ );
+
     $self->{time_parser} and $self->_parse_time_reset();
     while (@args) {
 	my ( $name, $value ) = splice @args, 0, 2;
 	$self->_attribute_exists( $name );
-##	if ($self->{_interactive}) {
 	if ( _is_interactive() ) {
 	    $nointeractive{$name}
 		and $self->_wail(
@@ -1574,7 +1575,7 @@ sub _set_geocoder {
 	value	=> $val,
 	class	=> 'Astro::App::Satpass2::Geocode',
 	message	=> 'Unknown formatter',
-	default	=> $default_geocoder,
+	default	=> $default_geocoder->(),
 	undefined => 1,
 	nocopy	=> 1,
 	prefix	=> [ 'Astro::App::Satpass2::Geocode' ]
@@ -1672,14 +1673,15 @@ sub _set_warner_attribute {
 
 sub _set_webcmd {
     my ($self, $name, $val) = @_;
-    $self->{spacetrack}
-	and $self->{spacetrack}->set(webcmd => $val);
+    my $st;
+    $st = $self->get( 'spacetrack' )
+	and $st->set( webcmd => $val );
     return ($self->{$name} = $val);
 }
 
 sub show : Verb( changes! deprecated! readonly! ) {
-    my ($self, @args) = @_;
-    (my $opt, @args) = $self->_getopt(@args);
+    my ( $self, $opt, @args ) = _arguments( @_ );
+
     foreach my $name ( qw{ deprecated readonly } ) {
 	exists $opt->{$name} or $opt->{$name} = 1;
     }
@@ -1843,8 +1845,8 @@ use constant SPY2DPS => 3600 * 365.24219 * SECSPERDAY;
     );
 
     sub sky : Verb() {
-	my ( $self, @args ) = @_;
-	( my $opt, @args ) = $self->_getopt( @args );
+	my ( $self, $opt, @args ) = _arguments( @_ );
+
 	my $verb = lc ( shift @args || 'list' );
 
 	if ( my $code = $handler{$verb} ) {
@@ -1858,10 +1860,10 @@ use constant SPY2DPS => 3600 * 365.24219 * SECSPERDAY;
 }
 
 sub source : Verb( optional! ) {
-    my ($self, @args) = @_;
-    (my $opt, @args) = $self->_getopt(@args);
+    my ( $self, $opt, $src, @args ) = _arguments( @_ );
+
     my $output;
-    my $reader = $self->_file_reader( shift @args, $opt )
+    my $reader = $self->_file_reader( $src, $opt )
 	or return;
 
     my @level1_cache;
@@ -1875,7 +1877,7 @@ sub source : Verb( optional! ) {
 	return shift @level1_cache;
     } : $reader;
 
-    my $frames = $self->_frame_push( source => [@args] );
+    my $frames = $self->_frame_push( source => \@args );
     # Note that level1 is unsupported, and works only when the
     # options are passed as a hash. It will go away when support for
     # the original satpass script is dropped.
@@ -1948,12 +1950,10 @@ sub source : Verb( optional! ) {
     $handler{getv} = $handler{get};
     $handler{show} = $handler{config};
 
-    sub spacetrack : Verb( all! changes! descending! effective!
-    end_epoch=s exclude=s last5! raw! rcs! status=s sort=s
-    start_epoch=s tle! verbose! ) {
-
-	my ( $self, @args ) = @_;
-	( my $opt, my $method, @args ) = $self->_getopt( @args );
+    # Attributes must all be on one line to process correctly under
+    # 5.8.8.
+    sub spacetrack : Verb( all! changes! descending! effective! end_epoch=s exclude=s last5! raw! rcs! status=s sort=s start_epoch=s tle! verbose! ) {
+	my ( $self, $opt, $method, @args ) = _arguments( @_ );
 
 	exists $opt->{raw}
 	    or $opt->{raw} = ( ! _is_interactive() );
@@ -2002,12 +2002,12 @@ sub source : Verb( optional! ) {
 
 }
 
-sub st : Verb() {	## no critic (RequireArgUnpacking)
-    my ( $self, @args ) = @_;
-    ( my $opt, my $func, @args ) = $self->_getopt( @args );
+sub st : Verb() {
+    my ( $self, $opt, $func, @args ) = _arguments( @_ );
+
     $self->_deprecation_notice( method => 'st' );
     if ( 'localize' eq $func ) {
-	my $st = $self->_get_spacetrack();
+	my $st = $self->_helper_get_object( 'spacetrack' );
 	foreach my $key (@args) {
 	    exists $self->{frame}[-1]{spacetrack}{$key}
 		or $self->{frame}[-1]{spacetrack}{$key} =
@@ -2026,8 +2026,8 @@ sub st : Verb() {	## no critic (RequireArgUnpacking)
     my @status_code_map = qw{+ S -};
 
     sub status : Verb( name! reload! ) {
-	my ($self, @args) = @_;
-	(my $opt, @args) = $self->_getopt(@args);
+	my ( $self, $opt, @args ) = _arguments( @_ );
+
 	@args or @args = qw{show};
 
 	my $verb = lc (shift (@args) || 'show');
@@ -2077,8 +2077,8 @@ sub st : Verb() {	## no critic (RequireArgUnpacking)
 }
 
 sub system : method Verb() {	## no critic (ProhibitBuiltInHomonyms)
-    my ( $self, @args ) = @_;
-    ( my $opt, my $verb, @args ) = $self->_getopt( @args );
+    my ( $self, $opt, $verb, @args ) = _arguments( @_ );
+
     @args = map {
 	bsd_glob( $_, GLOB_NOCHECK | GLOB_BRACE | GLOB_QUOTE )
     } @args;
@@ -2090,14 +2090,16 @@ sub system : method Verb() {	## no critic (ProhibitBuiltInHomonyms)
 	CORE::system {$verb} $verb, @args;
 	return;
     } else {
-	return capturex( $verb, @args );
+	load_package( 'IPC::System::Simple' )
+	    or $self->_wail( 'Can not load IPC::System::Simple' );
+	return IPC::System::Simple::capturex( $verb, @args );
     }
 }
 
 
 sub time : method Verb() {	## no critic (ProhibitBuiltInHomonyms,RequireArgUnpacking)
     my ($self, @args) = map { 'ARRAY' eq ref $_ ? @{ $_ } : $_ } @_;
-    $got_time_hires or $self->_wail( 'Time::HiRes not available' );
+    $have_time_hires->() or $self->_wail( 'Time::HiRes not available' );
     my $start = Time::HiRes::time();
     my $output = $self->dispatch(@args);
     defined $output and $output .= "\n";
@@ -2111,8 +2113,8 @@ sub time_parser : Verb() {
 }
 
 sub tle : Verb( verbose! ) {
-    my ($self, @args) = @_;
-    (my $opt, @args) = $self->_getopt(@args);
+    my ( $self, $opt, @args ) = _arguments( @_ );
+
     my $bodies = @args ? _choose([@args], $self->{bodies}) : $self->{bodies};
     my $method = $opt->{verbose} ? 'tle_verbose' : 'tle';
     return $self->_format_data(
@@ -2121,8 +2123,8 @@ sub tle : Verb( verbose! ) {
 
 
 sub unexport : Verb() {
-    my ( $self, @args ) = @_;
-    ( my $opt, @args ) = $self->_getopt( @args );
+    my ( $self, $opt, @args ) = _arguments( @_ );
+
     foreach my $name ( @args ) {
 	delete $self->{exported}{$name};
     }
@@ -2131,9 +2133,7 @@ sub unexport : Verb() {
 
 
 sub validate : Verb( quiet! ) {
-    my ($self, @args) = @_;
-
-    (my $opt, @args) = $self->_getopt(@args);
+    my ( $self, $opt, @args ) = _arguments( @_ );
 
     $self->_parse_time_reset();
     my $pass_start = $self->_parse_time (
@@ -2164,7 +2164,7 @@ sub version : Verb() {
 
 @{[__PACKAGE__]} $VERSION - Satellite pass predictor
 based on Astro::Coord::ECI @{[Astro::Coord::ECI->VERSION]}
-Copyright (C) 2009-2011 by Thomas R. Wyant, III
+Copyright (C) 2009-2012 by Thomas R. Wyant, III
 
 EOD
 }
@@ -2178,7 +2178,7 @@ EOD
 
 sub _aggregate {
     my ( $self, $bodies ) = @_;
-    local $Astro::Coord::ECI::TLE::Set::Singleton = $self->{singleton};	## no critic (ProhibitPackageVars)
+    local $Astro::Coord::ECI::TLE::Set::Singleton = $self->{singleton};
     return Astro::Coord::ECI::TLE::Set->aggregate ( @{ $bodies } );
 }
 
@@ -2205,6 +2205,49 @@ sub _apply_boolean_default {
 	    or $opt->{$key} = $default;
     }
     return;
+}
+
+#	@args = $self->_arguments(@args);
+#
+#	This subroutine determines the name of its caller, and parses
+#	out of the argument list any options specified in the caller's
+#	Verb() attribute. Before the parse, Getopt::Long is configured
+#	according to the caller's Configure() attribute if present, or
+#	the default configuration if not. The return is a list whose
+#	first element is the invocant, whose second element is a
+#	reference to the hash containing the parsed options, and whose
+#	subsequent elements are the remaining arguments, if any.
+#
+{
+
+    my @default_config = qw{default pass_through};
+####    my @default_config = qw{default};
+
+    sub _arguments {
+	my ( $self, @args ) = @_;
+
+	@args = map {
+	    has_method( $_, 'dereference' ) ?  $_->dereference() : $_
+	} @args;
+
+	'HASH' eq ref $args[0]
+	    and return ( $self, @args );
+
+	my @data = caller(1);
+	my $code = \&{$data[3]};
+
+	local @ARGV = @args;
+	my $lgl = _get_attr($code, 'Verb') || [];
+	my %opt;
+	my $err;
+	local $SIG{__WARN__} = sub {$err = $_[0]};
+	my $config = 
+	    _get_attr($code, 'Configure') || \@default_config;
+	my $go = Getopt::Long::Parser->new(config => $config);
+	$go->getoptions(\%opt, @$lgl) or $self->_wail($err);
+
+	return $self, \%opt, @ARGV;
+    }
 }
 
 #	$self->_attribute_exists( $name );
@@ -2368,10 +2411,8 @@ sub _file_reader {
     }
 
     my $ref = ref $file;
-    my $code = $self->can( '_file_reader_' . ref $file )
-	or $self->_wail(
-	sprintf 'Opening a %s ref is unsupported', ref $file
-    );
+    my $code = $self->can( "_file_reader_$ref" )
+	or $self->_wail( sprintf "Opening a $ref ref is unsupported" );
 
     goto &$code;
 }
@@ -2488,8 +2529,8 @@ sub _file_reader_SCALAR {
     $opt->{glob}
 	and return ${ $file };
 
-    my $fh = IO::File->new( $file, '<' )
-	or $self->_wail( 'Opening a SCALAR ref is unsupported' );
+    my $fh = IO::File->new( $file, '<' )	# Needs IO::File 1.14.
+	or $self->_wail( "Failed to open SCALAR ref: $!" );
 
     return sub { return scalar <$fh> };
 }
@@ -2621,8 +2662,7 @@ sub _frame_push {
 	my %dmpr;
 	my @mod;
 	return $dumper ||= do {
-	    foreach (qw{YAML::Dump YAML::Syck::Dump YAML::Tiny::Dump
-		Data::Dumper::Dumper}) {
+	    foreach (qw{YAML::Any::Dump Data::Dumper::Dumper}) {
 		my ($module, $routine) = m/ (.*) :: (.*) /smx;
 		push @mod, $module;
 		$dmpr{$module} = $routine;
@@ -2669,6 +2709,22 @@ sub _get_formatter_object {
 sub _get_formatter_attribute {
     my ( $self, $name ) = @_;
     return $self->get( 'formatter' )->$name();
+}
+
+#	$st = $satpass2->_get_geocoder()
+
+#	Gets the geocoder object, instantiating it if
+#	necesary.
+
+sub _get_geocoder {
+    my ( $self ) = @_;
+    if ( ! exists $self->{geocoder} ) {
+	my ( $class, $obj );
+	$class = $default_geocoder->()
+	    and $obj = $class->new();
+	$self->{geocoder} = $obj;
+    }
+    return $self->{geocoder};
 }
 
 #	$boolean = $satpass2->_get_interactive();
@@ -2752,10 +2808,10 @@ sub _get_time_parser_attribute {
 #	necesary.
 
 sub _get_spacetrack {
-    my $self = shift;
-    $self->{spacetrack} and return $self->{spacetrack};
-    $self->_load_module ('Astro::SpaceTrack');
-    return ($self->{spacetrack} ||= $self->_get_spacetrack_default());
+    my ( $self ) = @_;
+    exists $self->{spacetrack}
+	or $self->{spacetrack} = $self->_get_spacetrack_default();
+    return $self->{spacetrack};
 }
 
 #	$st = $satpass2->_get_spacetrack_default();
@@ -2765,7 +2821,9 @@ sub _get_spacetrack {
 #	iridium_status_format set to 'kelso'.
 
 sub _get_spacetrack_default {
-    my $self = shift;
+    my ( $self ) = @_;
+    $have_astro_spacetrack->()
+	or return;
     return Astro::SpaceTrack->new (
 	webcmd => $self->{webcmd},
 	filter => 1,
@@ -2817,49 +2875,6 @@ sub _get_warner_attribute {
     return $self->{_warner}->$name();
 }
 
-#	@args = $self->_getopt(@args);
-#
-#	This subroutine determines the name of its caller, and parses
-#	out of the argument list any options specified in the caller's
-#	Verb() attribute. Before the parse, Getopt::Long is configured
-#	according to the caller's Configure() attribute if present, or
-#	the default configuration if not. The return is a list whose
-#	first element is a reference to the hash containing the parsed
-#	options, and whose subsequent elements are the remaining
-#	arguments, if any.
-#
-{
-
-    my @default_config = qw{default pass_through};
-####    my @default_config = qw{default};
-
-    sub _getopt {
-	my ( $self, @args ) = @_;
-
-	@args = map {
-	    has_method( $_, 'dereference' ) ?  $_->dereference() : $_
-	} @args;
-
-	'HASH' eq ref $args[0]
-	    and return @args;
-
-	my @data = caller(1);
-	my $code = \&{$data[3]};
-
-	local @ARGV = @args;
-	my $lgl = _get_attr($code, 'Verb') || [];
-	my %opt;
-	my $err;
-	local $SIG{__WARN__} = sub {$err = $_[0]};
-	my $config = 
-	    _get_attr($code, 'Configure') || \@default_config;
-	my $go = Getopt::Long::Parser->new(config => $config);
-	$go->getoptions(\%opt, @$lgl) or $self->_wail($err);
-
-	return \%opt, @ARGV;
-    }
-}
-
 sub _helper_get_object {
     my ( $self, $attribute ) = @_;
     my $object = $self->get( $attribute )
@@ -2892,8 +2907,8 @@ sub _helper_get_object {
     );
 
     sub _helper_handler : Verb( changes! raw! ) {
-	my ( $self, $name, @args ) = @_;
-	( my $opt, my $method, @args ) = $self->_getopt( @args );
+	my ( $self, $opt, $name, $method, @args ) = _arguments( @_ );
+
 	exists $opt->{raw}
 	    or $opt->{raw} = ( ! _is_interactive() );
 
@@ -6124,11 +6139,11 @@ manipulate this is either directly on the formatter object, or via the
 L<formatter()|/formatter> method.
 
 This boolean attribute allows access to and manipulation of the time
-parser object's L<perltime|Astro::App::Satpass2::ParseTime/perltime> attribute.
-This is normally used (if at all) to specify that the Perl time
-built-ins be used to construct the parsed time. See the
-L<perltime|Astro::App::Satpass2::ParseTime/perltime> documentation for the
-default. See the documentation of the actual time parser class being
+parser object's L<perltime|Astro::App::Satpass2::ParseTime/perltime>
+attribute.  This is normally used (if at all) to specify that the Perl
+time built-ins be used to construct the parsed time. See the
+L<perltime|Astro::App::Satpass2::ParseTime/perltime> documentation for
+the default. See the documentation of the actual time parser class being
 used for what it does.
 
 This attribute was originally introduced because versions of
@@ -6866,7 +6881,7 @@ Thomas R. Wyant, III (F<wyant at cpan dot org>)
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2009-2011 by Thomas R. Wyant, III
+Copyright (C) 2009-2012 by Thomas R. Wyant, III
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl 5.10.0. For more details, see the full text
