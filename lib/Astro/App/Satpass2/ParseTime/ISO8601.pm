@@ -3,13 +3,12 @@ package Astro::App::Satpass2::ParseTime::ISO8601;
 use strict;
 use warnings;
 
-use Carp;
 use Astro::Coord::ECI::Utils qw{ looks_like_number SECSPERDAY };
 use Time::Local;
 
 use base qw{ Astro::App::Satpass2::ParseTime };
 
-our $VERSION = '0.000_38';
+our $VERSION = '0.000_39';
 
 my $zone_re = qr{ (?i: ( Z | UT | GMT ) |
     ( [+-] ) ( \d{1,2} ) :? ( \d{1,2} )? ) }smx;
@@ -38,18 +37,18 @@ sub delegate {
 	my @date;
 
 	# ISO 8601 date
-	if ( $string =~ m{ \A
+	if ( $string =~ m< \A
 		( \d{4} \D? | \d{2} \D )			# year: $1
 		(?: ( \d{1,2} ) \D?				# month: $2
-		    (?: ( \d{1,2} ) \D*				# day: $3
+		    (?: ( \d{1,2} ) \D?				# day: $3
 		    )?
 		)?
-	    }smxg ) {
+	    >smxg ) {
 	    @date = ( 0, $1, $2, $3 );
 
 	# special-case 'yesterday', 'today', and 'tomorrow'.
 	} elsif ( $string =~ m{ \A
-	    ( (?i: yesterday | today | tomorrow ) ) \D*		# day: $1
+	    ( (?i: yesterday | today | tomorrow ) ) \D?		# day: $1
 	    }smxg ) {
 	    my @today = @zone ? gmtime : localtime;
 	    @date = ( $special_day_offset{ lc $1 }, $today[5] + 1900,
@@ -61,7 +60,7 @@ sub delegate {
 
 	}
 
-	$string =~ m{ \G
+	$string =~ m< \G
 	    (?: ( \d{1,2} ) \D?			# hour: $1
 		(?: ( \d{1,2} ) \D?		# minute: $2
 		    (?: ( \d{1,2} ) \D?		# second: $3
@@ -69,7 +68,7 @@ sub delegate {
 		    )?
 		)?
 	    )?
-	    \z }smx or return;
+	    \z >smxgc or return;
 	push @date, $1, $2, $3, $4;
 
 	my $offset = shift @date || 0;

@@ -5,12 +5,11 @@ use warnings;
 
 use base qw{ Astro::App::Satpass2::Copier };
 
-use Carp;
 use Clone ();
 use Astro::App::Satpass2::FormatTime;
 use Astro::App::Satpass2::Utils qw{ load_package };
 
-our $VERSION = '0.000_38';
+our $VERSION = '0.000_39';
 
 use constant DEFAULT_LOCAL_COORD => 'azel_rng';
 
@@ -32,13 +31,12 @@ sub new {
     my $self = { %static };
     bless $self, $class;
 
+    $self->warner( delete $args{warner} );
+
     $class eq __PACKAGE__
 	and 'Astro::App::Satpass2::Test::App' ne caller
 	and $self->warner()->wail( __PACKAGE__,
 	    ' may not be instantiated. Use a subclass' );
-
-    $args{warner}
-	and $self->warner( delete $args{warner} );
 
     exists $args{tz} or $args{tz} = $ENV{TZ};
 
@@ -50,11 +48,8 @@ sub new {
     $args{time_format}
 	or $self->time_format( $self->time_formatter()->TIME_FORMAT() );
 
-    while ( my ( $name, $value ) = each %args ) {
-	$self->can( $name )
-	    or $self->warner()->wail( "Method '$name' does not exist" );
-	$self->$name( $value );
-    }
+    $self->init( %args );
+
     return $self;
 }
 
@@ -136,10 +131,11 @@ sub attribute_names {
 	my $dcdr = $decoder{$method}
 	    or return $self->$method( @args );
 	my $type = ref $dcdr
-	    or confess "Programming error -- decoder for $method is scalar";
+	    or $self->warner()->weep( "Decoder for $method is scalar" );
 	'CODE' eq $type
-	    and return $dcdr->( $self, $method, @args );
-	confess "Programming error -- decoder for $method is $type";
+	    or $self->warner()->weep(
+		"Decoder for $method is $type reference" );
+	return $dcdr->( $self, $method, @args );
     }
 }
 

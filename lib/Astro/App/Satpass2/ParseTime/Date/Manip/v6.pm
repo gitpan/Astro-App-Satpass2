@@ -3,7 +3,6 @@ package Astro::App::Satpass2::ParseTime::Date::Manip::v6;
 use strict;
 use warnings;
 
-use Carp;
 use Astro::Coord::ECI::Utils qw{ looks_like_number };
 use Time::Local;
 
@@ -11,7 +10,7 @@ use base qw{ Astro::App::Satpass2::ParseTime };
 
 use Astro::App::Satpass2::Utils qw{ load_package };
 
-our $VERSION = '0.000_38';
+our $VERSION = '0.000_39';
 
 my $invalid;
 
@@ -28,7 +27,9 @@ BEGIN {
 		Date::Manip->import();
 		1;
 	    }
-	    or $invalid = 'This package assumes a Date::Manip version >= 6';
+	    or $invalid = sprintf
+		'%s assumes a Date::Manip version >= 6. You have %s',
+		__PACKAGE__, Date::Manip->VERSION();
 	1;
     } or $invalid = ( $@ || 'Unable to load Date::Manip' );
 }

@@ -7,13 +7,12 @@ use warnings;
 
 use base qw{ Astro::App::Satpass2::FormatTime::DateTime };
 
-use Carp;
 use Astro::App::Satpass2::FormatTime::Cldr;
 use DateTime;
 use DateTime::TimeZone;
 use POSIX ();
 
-our $VERSION = '0.000_38';
+our $VERSION = '0.000_39';
 
 sub __format_datetime {
     my ( $self, $object, $tplt ) = @_;

@@ -10,12 +10,11 @@ use base qw{
 };
 
 use Astro::App::Satpass2::Utils qw{ instance };
-use Carp;
 use DateTime;
 use DateTime::TimeZone;
 use POSIX ();
 
-our $VERSION = '0.000_38';
+our $VERSION = '0.000_39';
 
 sub format_datetime {
     my ( $self, $tplt, $time, $gmt ) = @_;

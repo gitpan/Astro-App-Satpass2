@@ -5,8 +5,6 @@ use 5.008;
 use strict;
 use warnings;
 
-use Carp;
-
 our @CARP_NOT = ( qw{
     Astro::App::Satpass2
     Astro::App::Satpass2::Format
@@ -23,7 +21,7 @@ our @CARP_NOT = ( qw{
     Astro::App::Satpass2::ParseTime::ISO8601
 } );
 
-our $VERSION = '0.000_38';
+our $VERSION = '0.000_39';
 
 sub new {
     my ( $class, @arg ) = @_;
@@ -48,7 +46,8 @@ sub wail {
 	die $msg, "\n";
     } else {
 	$msg =~ s/[.?!]\z//msx;
-	croak $msg;
+	require Carp;
+	Carp::croak( $msg );
     }
 }
 
@@ -62,6 +61,14 @@ sub warning {
     }
 }
 
+sub weep {
+    my ( $self, @args ) = @_;
+    my $msg = join '', 'Programming Error - ', @args;
+    chomp $msg;
+    require Carp;
+    Carp::confess( $msg );
+}
+
 sub whinge {
     my ($self, @args) = @_;
     my $msg = join '', @args;
@@ -71,7 +78,8 @@ sub whinge {
 	warn $msg, "\n";
     } else {
 	$msg =~ s/ [.?!] \z //msx;
-	carp $msg;
+	require Carp;
+	Carp::carp( $msg );
     }
     return;
 }
@@ -126,6 +134,11 @@ C<warning> attribute. If called with an argument, it sets the value of
 the C<warning> attribute.
 
 The initial value of the attribute is false.
+
+=head2 weep
+
+This method concatenates all its arguments, prefixes
+C<'Programming Error - '>, and passes them to C<Carp::confess()>.
 
 =head2 whinge
 

@@ -3,13 +3,12 @@ package Astro::App::Satpass2::Copier;
 use strict;
 use warnings;
 
-use Carp;
 use Clone ();
 
 use Astro::App::Satpass2::Warner;
 use Scalar::Util qw{ blessed };
 
-our $VERSION = '0.000_38';
+our $VERSION = '0.000_39';
 
 sub attribute_names {
     return ( qw{ warner } );
@@ -46,6 +45,23 @@ sub create_attribute_methods {
 	};
     }
     return;
+}
+
+sub init {
+    my ( $self, %arg ) = @_;
+    exists $arg{warner}
+	and $self->warner( delete $arg{warner} );
+    foreach my $name ( $self->attribute_names() ) {
+	exists $arg{$name}
+	    and $self->$name( delete $arg{$name} );
+    }
+    if ( %arg ) {
+	my @extra = sort keys %arg;
+	$self->warner()->wail(
+	    join ' ', 'Unknown attribute name(s):', @extra
+	);
+    }
+    return $self;
 }
 
 sub warner {
@@ -174,6 +190,13 @@ the hash. The created methods have the same names as the attributes.
 They are accessors if called without arguments, and mutators returning
 the original object if called with arguments.  Methods already in
 existence when this method is called will not be overridden.
+
+=head2 init
+
+ $obj->init( name => value ... );
+
+This method sets multiple attributes. It dies if any of the names does
+not represent a legal attribute name. It returns the invocant.
 
 =head1 SUPPORT
 

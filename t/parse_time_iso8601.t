@@ -41,8 +41,8 @@ require_ok 'Astro::App::Satpass2::ParseTime';
 
 class 'Astro::App::Satpass2::ParseTime';
 
-method new => 'Astro::App::Satpass2::ParseTime::ISO8601', INSTANTIATE,
-    'Instantiate';
+method new => class => 'Astro::App::Satpass2::ParseTime::ISO8601',
+    INSTANTIATE, 'Instantiate';
 
 method isa => 'Astro::App::Satpass2::ParseTime::ISO8601', TRUE,
     'Object isa Astro::App::Satpass2::ParseTime::ISO8601';
@@ -320,6 +320,10 @@ method parse => '09/1',
 method parse => '09/1 Z',
     timegm( 0, 0, 0, 1, 0, 109 ),
     q{Parse ISO-8601 '09/1 Z'};
+
+method parse => '12/1/1 fubar',
+    undef,
+    q{Parse ISO-8601 '12/1/1 fubar' should fail};
 
 SKIP: {
 
