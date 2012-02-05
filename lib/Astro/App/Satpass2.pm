@@ -44,7 +44,7 @@ BEGIN {
 	};
 }
 
-our $VERSION = '0.000_39';
+our $VERSION = '0.001';
 
 # The following 'cute' code is so that we do not determine whether we
 # actually have optional modules until we really need them, and yet do
@@ -336,9 +336,6 @@ sub new {
 
     foreach my $name ( qw{ formatter time_parser } ) {
 	$self->set( $name => delete $args{$name} );
-	my $obj;
-	$obj = $self->get( $name )
-	    and $obj->warner( $warner );
     }
 
     $self->set( %args );
@@ -1290,6 +1287,10 @@ sub position : Verb( choose=s@ questionable|spare! quiet! ) {
 	    time		=> $time,
 	    twilight		=> $self->{_twilight},
 	}, $opt );
+}
+
+sub pwd : Verb() {
+    return Cwd::cwd() . "\n";
 }
 
 sub quarters : Verb( choose=s@ dump! ) {
@@ -4599,6 +4600,17 @@ This interactive method changes to the users' home directory, or to the
 given directory if one is specified as an argument. Tilde expansion is
 done on the argument if appropriate. Nothing is returned.
 
+B<Caveat:> I get a test failure in the no-argument case under FreeBSD
+6.2. The failure is because C<< File::HomeDir->my_home() >> thinks the
+user's home directory is F</home/foo>, but when I do a C<chdir()> to
+that directory, C<< Cwd::cwd >> reports that I am in F</usr/home/foo>.
+All the other CPAN testers are running 9.0, and under this the test
+passes. So I am unsure of the extent to which this is a problem. If this
+turns out to be a problem for you, I am willing to fix it, but will
+probably need some guidance on what is actually going on. In the
+meantime I have had F<t/whole_app.t> make the test for this a C<TODO>
+under FreeBSD before 7.0.
+
 =head2 choose
 
  $satpass2->choose( 25544, 'hst' )
@@ -5242,6 +5254,14 @@ C<-spare> is a synonym for C<-questionable>.
 The C<endtime> and C<interval> arguments and the C<-realtime> option,
 which were present in the original F<satpass> script, have been
 retracted. If you need any of these, please contact the author.
+
+=head2 pwd
+
+ $output = $satpass2->pwd();
+ satpass2> pwd
+
+This interactive method simply returns the name of the current working
+directory, terminated with a C<"\n">.
 
 =head2 quarters
 
@@ -6646,9 +6666,13 @@ explicit localization blocks, which I kind of wanted all along.
 =item location
 
 It was decided to have an explicit method to display the location,
-rather than have certain methods (e.g. 'pass') display it, and others
-(e.g. 'flare') not. In other words, I decided I was not smart enough to
-know when a user would want the location displayed.
+rather than have certain methods (e.g. C<pass()>) display it, and others
+(e.g. C<flare()>) not. In other words, I decided I was not smart enough
+to know when a user would want the location displayed.
+
+=item pwd
+
+This seems to go with C<cd()>.
 
 =item time
 
@@ -6727,8 +6751,8 @@ The commands, and the reasons for their modification, appear below.
 =item almanac
 
 The location of the observing station is no longer emitted as part of
-the output; an explicit location() is needed. I decided that I was not
-really smart enough to know when the user would want this output.
+the output; an explicit C<location()> is needed. I decided that I was
+not really smart enough to know when the user would want this output.
 
 Until support for the F<satpass> script is dropped, though, output from
 this command will still include the location if the command is issued
@@ -6741,8 +6765,8 @@ a F<satpass> initialization file.
 The sense of the C<-am>, C<-day>, and C<-pm> options is reversed from
 the sense in F<satpass>. That is, in F<satpass>, C<-am> meant not to
 display morning flares, whereas in C<Astro::App::Satpass2>, C<-am> means
-not to display morning flares, and C<-noam> means not to. I personally
-found the F<satpass> functionality confusing.
+not to display morning flares, and C<-noam> means to display them. I
+personally found the F<satpass> functionality confusing.
 
 In order to ease the transition to C<Astro::App::Satpass2>, these
 options will be taken in their F<satpass> sense (and inverted to their
@@ -6773,8 +6797,8 @@ prefix on the wrapper name may be omitted when setting the geocoder.
 =item pass
 
 The location of the observing station is no longer emitted as part of
-the output; an explicit location() is needed. I decided that I was not
-really smart enough to know when the user would want this output.
+the output; an explicit C<location()> is needed. I decided that I was
+not really smart enough to know when the user would want this output.
 
 Until support for the F<satpass> script is dropped, though, output from
 this command will still include the location if the command is issued
@@ -6827,23 +6851,23 @@ defaulted to true.
 =item country
 
 This attribute existed to support selection of geocoding servers, but
-since geocoder.ca changed its access policy only geocoder.us is
-supported, and this attribute is ignored and deprecated. This attribute
-will be dropped when support for F<satpass> is dropped.
+since geocoding is now done with plug-in modules, this attribute is
+ignored.  This attribute will be dropped when support for F<satpass> is
+dropped.
 
 =item date_format
 
 This attribute is deprecated. It is properly an attribute of
-L<Astro::App::Satpass2::Format|Astro::App::Satpass2::Format>, and is implemented as a
-wrapper for that class' C<date_format> attribute. It will be dropped
-when support for F<satpass> is dropped.
+L<Astro::App::Satpass2::Format|Astro::App::Satpass2::Format>, and is
+implemented as a wrapper for that class' C<date_format> attribute. It
+will be dropped when support for F<satpass> is dropped.
 
 =item desired_equinox_dynamical
 
 This attribute is deprecated. It is properly an attribute of
-L<Astro::App::Satpass2::Format|Astro::App::Satpass2::Format>, and is implemented as a
-wrapper for that class' C<desired_equinox_dynamical> attribute. It will
-be dropped when support for F<satpass> is dropped.
+L<Astro::App::Satpass2::Format|Astro::App::Satpass2::Format>, and is
+implemented as a wrapper for that class' C<desired_equinox_dynamical>
+attribute. It will be dropped when support for F<satpass> is dropped.
 
 =item explicit_macro_delete
 

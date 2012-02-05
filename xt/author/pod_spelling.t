@@ -69,6 +69,7 @@ formatter
 formatter's
 formatters
 fr
+FreeBSD
 FreeDesktop
 Gasparovic
 gb
@@ -121,6 +122,7 @@ pm
 POSIX
 precessed
 programmatically
+pwd
 quoter
 radian
 radians
