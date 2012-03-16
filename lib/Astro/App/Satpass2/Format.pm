@@ -9,7 +9,7 @@ use Clone ();
 use Astro::App::Satpass2::FormatTime;
 use Astro::App::Satpass2::Utils qw{ load_package };
 
-our $VERSION = '0.001';
+our $VERSION = '0.002';
 
 use constant DEFAULT_LOCAL_COORD => 'azel_rng';
 
@@ -137,6 +137,13 @@ sub attribute_names {
 		"Decoder for $method is $type reference" );
 	return $dcdr->( $self, $method, @args );
     }
+}
+
+sub format : method {	## no critic (ProhibitBuiltInHomonyms,RequireFinalReturn)
+    my ( $self ) = @_;
+    # ->weep() throws an exception.
+    $self->warner()->weep(
+	'The format() method must be overridden' );
 }
 
 sub local_coord {

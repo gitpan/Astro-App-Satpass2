@@ -7,7 +7,7 @@ use base qw{ Astro::App::Satpass2::Format };
 
 use Astro::App::Satpass2::Utils qw{ load_package };
 
-our $VERSION = '0.001';
+our $VERSION = '0.002';
 
 my %dumper_hash = (
     'YAML::Any' => 'Dump',
@@ -70,7 +70,7 @@ sub _dump {
     }
 }
 
-sub format {	## no critic (ProhibitBuiltInHomonyms)
+sub format : method {	## no critic (ProhibitBuiltInHomonyms)
     splice @_, 1, 1;
     goto &_dump;
 }

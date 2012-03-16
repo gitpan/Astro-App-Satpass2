@@ -7,7 +7,7 @@ use warnings;
 
 use base qw{ Astro::App::Satpass2::Copier };
 
-our $VERSION = '0.001';
+our $VERSION = '0.002';
 
 my $delegate = eval {
     require Astro::App::Satpass2::FormatTime::DateTime::Strftime;
@@ -30,6 +30,13 @@ sub new {
 
 sub attribute_names {
     return ( qw{ gmt tz } );
+}
+
+sub format_datetime {	## no critic (RequireFinalReturn)
+    my ( $self ) = @_;
+    # ->weep() throws an exception.
+    $self->warner()->weep(
+	'Method format_datetime() must be overridden' );
 }
 
 {

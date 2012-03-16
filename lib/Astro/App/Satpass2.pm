@@ -8,14 +8,14 @@ use warnings;
 use Astro::App::Satpass2::ParseTime;
 use Astro::App::Satpass2::Utils qw{ has_method instance load_package quoter };
 
-use Astro::Coord::ECI 0.037;
-use Astro::Coord::ECI::Moon 0.037;
-use Astro::Coord::ECI::Star 0.037;
-use Astro::Coord::ECI::Sun 0.037;
-use Astro::Coord::ECI::TLE 0.037 qw{:constants};
-use Astro::Coord::ECI::TLE::Iridium 0.037;	# This really needs 0.037.
-use Astro::Coord::ECI::TLE::Set 0.037;
-use Astro::Coord::ECI::Utils 0.037 qw{:all};
+use Astro::Coord::ECI 0.049;			# This really needs 0.049.
+use Astro::Coord::ECI::Moon 0.049;
+use Astro::Coord::ECI::Star 0.049;
+use Astro::Coord::ECI::Sun 0.049;
+use Astro::Coord::ECI::TLE 0.049 qw{:constants}; # This really needs 0.049.
+use Astro::Coord::ECI::TLE::Iridium 0.049;	# This really needs 0.049.
+use Astro::Coord::ECI::TLE::Set 0.049;
+use Astro::Coord::ECI::Utils 0.049 qw{:all};
 
 use Clone ();
 use Cwd ();
@@ -44,7 +44,7 @@ BEGIN {
 	};
 }
 
-our $VERSION = '0.001';
+our $VERSION = '0.002';
 
 # The following 'cute' code is so that we do not determine whether we
 # actually have optional modules until we really need them, and yet do
@@ -376,7 +376,7 @@ sub almanac : Verb( choose=s@ dump! horizon|rise|set! transit! twilight! quarter
 
 #	Build an object representing our ground location.
 
-    my $sta = $self->_get_station();
+    my $sta = $self->station();
 
 ##  my $id = looks_like_number($self->{twilight}) ?
 ##	"twilight ($self->{twilight} degrees)" :
@@ -400,10 +400,11 @@ sub almanac : Verb( choose=s@ dump! horizon|rise|set! transit! twilight! quarter
 	    next;
 	};
 	$body->set (
-	    twilight => $self->{_twilight},
+	    station	=> $sta,
+	    twilight	=> $self->{_twilight},
 	);
 	push @almanac, $body->almanac_hash(
-	    $sta, $almanac_start, $almanac_end);
+	    $almanac_start, $almanac_end);
     }
 
 #	Sort the almanac data by date, and display the results.
@@ -447,7 +448,11 @@ sub choose : Verb( epoch=s ) {
 	$self->_aggregate( $self->{bodies} )
 	];
     }
-    @args and $self->{bodies} = _choose(\@args, $self->{bodies});
+    if ( @args ) {
+	my @bodies = @{ _choose( \@args, $self->{bodies} ) }
+	    or $self->_wail( 'No bodies chosen' );
+	@{ $self->{bodies} } = @bodies;
+    }
     return;
 }
 
@@ -480,7 +485,11 @@ sub dispatch {
 
 sub drop : Verb() {
     my ( $self, $opt, @args ) = _arguments( @_ );
-    $self->{bodies} = _choose({invert => 1}, \@args, $self->{bodies});
+    if ( @args ) {
+	my @bodies = @{ _choose( { invert => 1 }, \@args, $self->{bodies} ) }
+	    or $self->_wail( 'No bodies left' );
+	@{ $self->{bodies} } = @bodies;
+    }
     return;
 }
 
@@ -667,7 +676,7 @@ sub flare : Verb( algorithm=s am! choose=s@ day! dump! pm! questionable|spare! q
     my $pass_end = $self->_parse_time (shift @args || '+7');
     $pass_start >= $pass_end
 	and $self->_wail("End time must be after start time");
-    my $sta = $self->_get_station();
+    my $sta = $self->station();
 
     my $max_mirror_angle = deg2rad( $self->{max_mirror_angle} );
     my $horizon = deg2rad ($self->{horizon});
@@ -704,6 +713,7 @@ sub flare : Verb( algorithm=s am! choose=s@ day! dump! pm! questionable|spare! q
 	    day		=> $opt->{day},
 	    pm		=> $opt->{pm},
 	    extinction	=> $self->{extinction},
+	    station	=> $sta,
 	    zone	=> $zone,
 	);
 	push @active, $tle;
@@ -713,7 +723,7 @@ sub flare : Verb( algorithm=s am! choose=s@ day! dump! pm! questionable|spare! q
     my @flares;
     foreach my $tle (@active) {
 	eval {
-	    push @flares, $tle->flare ($sta, $pass_start, $pass_end);
+	    push @flares, $tle->flare( $pass_start, $pass_end );
 	    1;
 	} or do {
 	    $@ =~ m/ \Q$interrupted\E /smxo and $self->_wail($@);
@@ -1044,7 +1054,7 @@ sub _localize {
 sub location : Verb( dump! ) {
     my ( $self, $opt ) = _arguments( @_ );
     return $self->_format_data(
-	location => $self->_get_station(), $opt );
+	location => $self->station(), $opt );
 }
 
 {
@@ -1122,7 +1132,7 @@ sub pass : Verb( choose=s@ appulse! chronological! dump! events! horizon|rise|se
     $pass_start >= $pass_end
 	and $self->_wail("End time must be after start time");
 
-    my $sta = $self->_get_station();
+    my $sta = $self->station();
     my @bodies = @{$opt->{choose} ? scalar _choose($opt->{choose},
 	    $self->{bodies}) : $self->{bodies}}
 	or $self->_wail("No bodies selected");
@@ -1131,6 +1141,12 @@ sub pass : Verb( choose=s@ appulse! chronological! dump! events! horizon|rise|se
 #	Decide which model to use.
 
     my $model = $self->{model};
+
+    # Set the station for the objects in the sky.
+
+    foreach my $body ( @{ $self->{sky} } ) {
+	$body->set( station => $sta );
+    }
 
 #	Pick up horizon and appulse distance.
 
@@ -1156,6 +1172,7 @@ sub pass : Verb( choose=s@ appulse! chronological! dump! events! horizon|rise|se
 		interval => ( $self->{verbose} ? $pass_step : 0 ),
 		model => $mdl,
 		pass_threshold => $pass_threshold,
+		station	=> $sta,
 		twilight => $self->{_twilight},
 		visible => $self->{visible},
 	    );
@@ -1163,7 +1180,7 @@ sub pass : Verb( choose=s@ appulse! chronological! dump! events! horizon|rise|se
 
 	eval {
 	    push @accumulate, $self->_pass_select_event( $opt, $tle->pass (
-		$sta, $pass_start, $pass_end, $self->{sky} ) );
+		$pass_start, $pass_end, $self->{sky} ) );
 	    1;
 	} or do {
 	    $@ =~ m/ \Q$interrupted\E /smxo and $self->_wail($@);
@@ -1245,8 +1262,8 @@ sub position : Verb( choose=s@ questionable|spare! quiet! ) {
 
 #	Define the observing station.
 
-    my $sta = $self->_get_station();
-    $sta->universal($time);
+    my $sta = $self->station();
+    $sta->universal( $time );
 
 
     my @list = ( $self->_aggregate( $self->{bodies} ), @{$self->{sky}});
@@ -1263,6 +1280,7 @@ sub position : Verb( choose=s@ questionable|spare! quiet! ) {
 		edge_of_earths_shadow => $self->{edge_of_earths_shadow},
 		geometric => $self->{geometric},
 		horizon => $horizon,
+		station	=> $sta,
 		twilight => $self->{_twilight},
 	    );
 	    $body->get('inertial')
@@ -1282,7 +1300,7 @@ sub position : Verb( choose=s@ questionable|spare! quiet! ) {
 	position => {
 	    bodies		=> \@good,
 	    questionable	=> $opt->{questionable},
-	    station		=> $self->_get_station()->universal(
+	    station		=> $self->station()->universal(
 		$time ),
 	    time		=> $time,
 	    twilight		=> $self->{_twilight},
@@ -1760,16 +1778,29 @@ use constant SPY2DPS => 3600 * 365.24219 * SECSPERDAY;
 
 {
 
+    my %planet_class = (
+	( map { _fold_case( $_ ) => "Astro::Coord::ECI::$_" } qw{ Sun
+	    Moon } ),
+	# The shape of things to come -- maybe
+	( map { _fold_case( $_ ) =>
+	    "Astro::Coord::ECI::Heliocentric::$_" } qw{ Mercury Venus
+	    Mars Jupiter Saturn Uranus Neptune } ),
+    );
+
     my %handler = (
 	list	=> sub {
 	    my ( $self, @args ) = @_;
 	    my $output;
 	    foreach my $body (
-		map {$_->[1]}
-		sort {$a->[0] cmp $b->[0]}
-		map {[lc $_->get('name'), $_]}
-		@{$self->{sky}}) {
-		if ($body->isa ('Astro::Coord::ECI::Star')) {
+		map { $_->[1] }
+		sort { $a->[0] cmp $b->[0] }
+		map { [ lc( $_->get( 'name' ) || $_->get( 'id' ) ), $_ ] }
+		@{$self->{sky}}
+	    ) {
+		if ( embodies( $body, 'Astro::Coord::ECI::TLE' ) ) {
+		    $output .= sprintf "sky tle %s\n", quoter(
+			$body->get( 'tle' ) );
+		} elsif ($body->isa ('Astro::Coord::ECI::Star')) {
 		    my ($ra, $dec, $rng, $pmra, $pmdec, $vr) = $body->position ();
 		    $rng /= PARSEC;
 		    $pmra = rad2deg ($pmra / 24 * 360 * cos ($ra)) * SPY2DPS;
@@ -1793,36 +1824,43 @@ use constant SPY2DPS => 3600 * 365.24219 * SECSPERDAY;
 	    my ( $self, @args ) = @_;
 	    my $name = shift @args
 		or $self->_wail("You did not specify what to add");
-	    my $lcn = lc $name;
-	    my $special = $lcn eq 'sun' || $lcn eq 'moon';
-	    my $class = 'Astro::Coord::ECI::' .
-		($special ? ucfirst ($lcn) : 'Star');
-	    foreach my $body (@{$self->{sky}}) {
-		return if $body->isa ($class) &&
-			($special || $lcn eq lc $body->get ('name'));
-	    }
-	    my $body = $class->new (debug => $self->{debug});
-	    unless ($special) {
-		$body->set (name => $name);
+	    my $fcn = _fold_case( $name );
+	    if ( my $class = $planet_class{$fcn} ) {
+		foreach my $body ( @{ $self->{sky} } ) {
+		    $body->isa( $class )
+			and return;
+		}
+		load_module( $class );
+		push @{ $self->{sky} }, $class->new(
+		    debug	=> $self->{debug},
+		);
+	    } else {
+		foreach my $body ( @{ $self->{sky} } ) {
+		    $body->isa( 'Astro::Coord::ECI::Star' )
+			and $fcn eq _fold_case( $body->get( 'name' ) )
+			and return;
+		}
 		@args >= 2 
 		    or $self->_wail(
-		    "You must give at least right ascension and declination");
-		my $ra = deg2rad (_parse_angle (shift @args));
-		my $dec = deg2rad (_parse_angle (shift @args));
+		    'You must give at least right ascension and declination' );
+		my $ra = deg2rad( _parse_angle( shift @args ) );
+		my $dec = deg2rad( _parse_angle( shift @args ) );
 		my $rng = @args ?
-		    $self->_parse_distance (shift @args, '1pc') :
+		    $self->_parse_distance( shift @args, '1pc' ) :
 		    10000 * PARSEC;
 		my $pmra = @args ? do {
 		    my $angle = shift @args;
 		    $angle =~ s/ s \z //smxi
-			or $angle *= 24 / 360 / cos ($ra);
-		    deg2rad ($angle / SPY2DPS);
+			or $angle *= 24 / 360 / cos( $ra );
+		    deg2rad( $angle / SPY2DPS );
 		} : 0;
-		my $pmdec = @args ? deg2rad (shift (@args) / SPY2DPS) : 0;
+		my $pmdec = @args ? deg2rad( shift( @args ) / SPY2DPS ) : 0;
 		my $pmrec = @args ? shift @args : 0;
-		$body->position ($ra, $dec, $rng, $pmra, $pmdec, $pmrec);
+		push @{ $self->{sky} }, Astro::Coord::ECI::Star->new(
+		    debug	=> $self->{debug},
+		    name	=> $name,
+		)->position( $ra, $dec, $rng, $pmra, $pmdec, $pmrec );
 	    }
-	    push @{$self->{sky}}, $body;
 	    return;
 	},
 	clear	=> sub {
@@ -1838,6 +1876,21 @@ use constant SPY2DPS => 3600 * 365.24219 * SECSPERDAY;
 	    @{$self->{sky}} = grep {
 		$_->get ('name') !~ m/ $match /smx } @{$self->{sky}};
 	    return;
+	},
+	load	=> sub {	# Undocumented. That means I can revoke
+				# at any time, without notice. If you
+				# need this functionality, please
+				# contact me.
+	    my ( $self, @args ) = @_;
+	    my $tle;
+	    foreach my $fn ( @args ) {
+		local $/ = undef;
+		open my $fh, '<', $fn
+		    or $self->_wail( "Failed to open $fn: $!" );
+		$tle .= <$fh>;
+		close $fh;
+	    }
+	    return $self->_sky_tle( $tle );
 	},
 	lookup	=> sub {
 	    my ( $self, @args ) = @_;
@@ -1862,7 +1915,10 @@ use constant SPY2DPS => 3600 * 365.24219 * SECSPERDAY;
 	    push @{$self->{sky}}, $body;
 	    return $output;
 	},
-
+	tle	=> \&_sky_tle,	# Undocumented. That means I can revoke
+				# at any time, without notice. If you
+				# need this functionality, please
+				# contact me.
     );
 
     sub sky : Verb() {
@@ -1878,6 +1934,22 @@ use constant SPY2DPS => 3600 * 365.24219 * SECSPERDAY;
 	return;	# We can't get here, but Perl::Critic does not know this.
     }
 
+}
+
+sub _sky_tle {
+    my ( $self, $tle ) = @_;
+    my @bodies = Astro::Coord::ECI::TLE::Set->aggregate(
+	Astro::Coord::ECI::TLE->parse( $tle ) );
+    my %extant = map { $_->get( 'id' ) => 1 }
+	grep { embodies( $_, 'Astro::Coord::ECI::TLE' ) }
+	@{ $self->{sky} };
+    foreach my $body ( @bodies ) {
+	my $id = $body->get( 'id' );
+	$extant{$id}
+	    and $self->_wail( "Duplicate sky entry $id" );
+    }
+    push @{ $self->{sky} }, @bodies;
+    return sprintf "sky tle %s\n", quoter( $tle );
 }
 
 sub source : Verb( optional! ) {
@@ -2038,6 +2110,23 @@ sub st : Verb() {
 	goto &spacetrack;
     }
     return;
+}
+
+sub station {
+    my ( $self ) = @_;
+    defined $self->{height}
+	and defined $self->{latitude}
+	and defined $self->{longitude}
+	or $self->_wail( 'You must set height, latitude, and longitude' );
+    return Astro::Coord::ECI->new (
+	    refraction => 1,
+	    name => $self->{location} || '',
+	    id => 'station',
+	)->geodetic (
+	    deg2rad( $self->{latitude} ),
+	    deg2rad( $self->{longitude} ),
+	    $self->{height} / 1000
+	);
 }
 
 # TODO I must have thought -reload would be good for something, but it
@@ -2267,7 +2356,7 @@ sub _apply_boolean_default {
 	my $go = Getopt::Long::Parser->new(config => $config);
 	$go->getoptions(\%opt, @$lgl) or $self->_wail($err);
 
-	return $self, \%opt, @ARGV;
+	return ( $self, \%opt, @ARGV );
     }
 }
 
@@ -2554,6 +2643,19 @@ sub _file_reader_SCALAR {
 	or $self->_wail( "Failed to open SCALAR ref: $!" );
 
     return sub { return scalar <$fh> };
+}
+
+BEGIN {
+
+    # sub _fold_case(). This needs to be inside a BEGIN block because it
+    # is called to initialize the planet-to-class map.
+
+    if ( my $code = CORE->can( 'fc' ) ) {
+	*_fold_case = sub { $code->( $_[0] ) };
+    } else {
+	*_fold_case = sub { lc $_[0] };
+    }
+
 }
 
 sub _format_data {
@@ -2850,28 +2952,6 @@ sub _get_spacetrack_default {
 	filter => 1,
 	iridium_status_format => 'kelso',
     );
-}
-
-#	$satpass2->_get_station();
-
-#	This subroutine manufactures and returns a station object
-#	appropriate to the current parameter settings. It throws an
-#	exception if the height, latitude, and longitude are not
-#	defined.
-
-sub _get_station {
-    my $self = shift;
-    (defined $self->{height} && defined $self->{latitude} &&
-	defined $self->{longitude})
-	or $self->_wail("You must set height, latitude, and longitude");
-    return Astro::Coord::ECI->new (
-	    refraction => 1,
-	    name => $self->{location} || '',
-	    id => 'station',
-	    )
-	->geodetic (
-	    deg2rad ($self->{latitude}), deg2rad ($self->{longitude}),
-	    $self->{height} / 1000);
 }
 
 sub _get_today_midnight {
@@ -4628,6 +4708,9 @@ The following options may be specified:
 
 Nothing is returned.
 
+An exception is raised if the operation would leave the observing list
+empty.
+
 =head2 clear
 
  $satpass2->clear();
@@ -4654,7 +4737,12 @@ interactively.
 
 This interactive method inverts the sense of L<choose()|/choose>,
 removing from the observing list all bodies that match the selection
-criteria. Nothing is returned.
+criteria.
+
+Nothing is returned.
+
+An exception is raised if the operation would leave the observing list
+empty.
 
 =head2 dump
 
@@ -5611,6 +5699,16 @@ This method is really just a front-end for the
 L<Astro::Coord::ECI::TLE|Astro::Coord::ECI::TLE>
 L<status()|Astro::Coord::ECI::TLE/status> method. See the documentation
 for that for more details.
+
+=head2 station
+
+ my $sta = $satpass2->station();
+
+This non-interactive method manufactures and returns an
+L<Astro::Coord::ECI|Astro::Coord::ECI> object representing the observer
+from the current values of the latitude, longitude and height
+attributes. It throws an exception if any of the relevant attributes are
+not defined.
 
 =head2 system
 
