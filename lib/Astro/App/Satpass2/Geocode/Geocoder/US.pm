@@ -9,7 +9,7 @@ use base qw{ Astro::App::Satpass2::Geocode };
 
 use Astro::App::Satpass2::Utils qw{ instance };
 
-our $VERSION = '0.003';
+our $VERSION = '0.004';
 
 use constant GEOCODER_CLASS => 'Geo::Coder::Geocoder::US';
 
@@ -60,7 +60,7 @@ Astro::App::Satpass2::Geocode::Geocoder::US - Wrapper for Geo::Coder::Geocoder::
 =head1 SYNOPSIS
 
  use Astro::App::Satpass2::Geocode::Geocoder::US;
- use YAML::Any;
+ use YAML;
  
  my $gc = Astro::App::Satpass2::Geocode::Geocoder::US->new();
  print Dump( $gc->geocode( '10 Downing St, London England' );

@@ -10,7 +10,7 @@ use base qw{ Astro::App::Satpass2::Copier };
 use Astro::App::Satpass2::Utils qw{ instance load_package };
 use Astro::App::Satpass2::Warner;
 
-our $VERSION = '0.003';
+our $VERSION = '0.004';
 
 sub new {
     my ( $class, %args ) = @_;
@@ -104,7 +104,7 @@ Astro::App::Satpass2::Geocode - Abstract geocoding wrapper class.
  # subclass of this class,
  
  use Astro::App::Satpass2::Geocode::TomTom;
- use YAML::Any;
+ use YAML;
  
  my $geocoder = Astro::App::Satpass2::Geocode::TomTom->new();
  print Dump( $geocoder->geocode(

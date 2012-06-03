@@ -44,7 +44,7 @@ BEGIN {
 	};
 }
 
-our $VERSION = '0.003';
+our $VERSION = '0.004';
 
 # The following 'cute' code is so that we do not determine whether we
 # actually have optional modules until we really need them, and yet do
@@ -2539,28 +2539,7 @@ sub _file_reader_ {
 	$self->_wail( 'Defined file required' );
     }
 
-    # TODO using a regex for recognizing URL schemes is ad-hocery. The
-    # rationale of the regex is to require at least two characters,
-    # because that is the shortest registered scheme and to avoid DOS
-    # file names. Forbidding a left square bracket after the colon is to
-    # avoid VMS file names. The right way to do this is to find a module
-    # that knows what the legal schemes are. A less-right way is to
-    # imbed the list of registered scheme names in the code (there are
-    # 90 or so listed with IANA).
-    #
-    # The regex below was adapted from Michael G. Schwern's URI::Find.
-    #
-    # On the other hand, URI::URL will throw an exception on an unknown
-    # path if URI::URL::strict(1) is in effect. This may need more
-    # research, since the implementation of URI::URL::strict() seems to
-    # use some magic involving package URI::_foreign. Unfortunately most
-    # of the ways to take advantage of this seem to violate
-    # encapsulation. The closest to not violating encapsulation is to
-    # run it through $url = URL->new() and then check $url->isa(
-    # 'URL::_foreign' ).
-
-    if ( $file =~ m/ \A [[:alpha:]] [[:alnum:].-]+ : (?! \[ ) /smx	# ]
-	&& $self->_file_reader__validate_url( $file ) ) {
+    if ( $self->_file_reader__validate_url( $file ) ) {
 	my $ua = LWP::UserAgent->new();
 	my $resp = $ua->get( $file );
 	$resp->is_success()
@@ -2589,18 +2568,21 @@ sub _file_reader__validate_url {
     load_package( 'LWP::UserAgent' )
 	or return;
 
-    load_package( 'URI::URL' )
+    load_package( 'URI' )
 	or return;
 
-    my $old_strict = URI::URL::strict( 1 );
-    eval {
-	URI::URL->new( $url );
-	URI::URL::strict( $old_strict );
-	1;
-    } or do {
-	URI::URL::strict( $old_strict );
-	return;
-    };
+    load_package( 'LWP::Protocol' )
+	or return;
+
+    my $obj = URI->new( $url )
+	or return;
+    $obj->can( 'authority' )
+	or return 1;
+
+    defined( my $scheme = $obj->scheme() )
+	or return;
+    LWP::Protocol::implementor( $scheme )
+	or return;
 
     return 1;
 }
@@ -2786,7 +2768,7 @@ sub _frame_push {
 	my %dmpr;
 	my @mod;
 	return $dumper ||= do {
-	    foreach (qw{YAML::Any::Dump Data::Dumper::Dumper}) {
+	    foreach (qw{YAML::Dump Data::Dumper::Dumper}) {
 		my ($module, $routine) = m/ (.*) :: (.*) /smx;
 		push @mod, $module;
 		$dmpr{$module} = $routine;
@@ -4504,19 +4486,19 @@ like, instead of C<strftime> formats.
 
 This module is used by the default geocoder for the
 L<geocode()|/geocode> method.  If you are not interested in using the
-L<geocode()|/geocode> method you do not need this method.
+L<geocode()|/geocode> method you do not need this module.
 
 =item L<Geo::Coder::OSM|Geo::Coder::OSM>
 
 This module is used by the Open Street Map geocoder for the
 L<geocode()|/geocode> method.  If you are not interested in using the
-L<geocode()|/geocode> method you do not need this method.
+L<geocode()|/geocode> method you do not need this module.
 
 =item L<Geo::Coder::TomTom|Geo::Coder::TomTom>
 
 This module is used by the Tom Tom geocoder for the
 C<geocode()|/geocode> method.  If you are not interested in using the
-L<geocode()|/geocode> method you do not need this method.
+L<geocode()|/geocode> method you do not need this module.
 
 =item L<Geo::WebService::Elevation::USGS|Geo::WebService::Elevation::USGS>
 
@@ -4525,6 +4507,12 @@ indirectly by the L<geocode()|/geocode> method. If you are not
 interested in these you do not need this module.
 
 =item L<LWP::UserAgent|LWP::UserAgent>
+
+This module is only used directly if you are specifying URLs as input
+(see L</SPECIFYING INPUT DATA>). It is implied, though, by a number of
+the other optional modules.
+
+=item L<LWP::Protocol|LWP::Protocol>
 
 This module is only used directly if you are specifying URLs as input
 (see L</SPECIFYING INPUT DATA>). It is implied, though, by a number of
@@ -4547,7 +4535,7 @@ also find that a wider range of times is available in 64-bit Perls.
 At least some versions of L<Time::y2038|Time::y2038> have had trouble on
 Windows-derived systems, including Cygwin. I<Caveat user.>
 
-=item L<URI::URL|URI::URL>
+=item L<URI|URI>
 
 This module is only used directly if you are specifying URLs as input
 (see L</SPECIFYING INPUT DATA>). It is implied, though, by a number of
@@ -5420,8 +5408,8 @@ arguments are executed first. How commands are read from C<STDIN>
 depends on a number of factors. If C<STDIN> is a terminal and
 Term::ReadLine can be loaded, a Term::ReadLine object is instantiated
 and used to read input.  If C<STDIN> is a terminal and Term::ReadLine
-can not be loaded, the prompt is printed to STDERR and C<STDIN> is read.
-If C<STDIN> is not a terminal, it is read.
+can not be loaded, the prompt is printed to C<STDERR> and C<STDIN> is
+read.  If C<STDIN> is not a terminal, it is read.
 
 The default command acquisition behavior can be changed by passing, as
 the first argument, a code reference. This should refer to a subroutine
@@ -5510,7 +5498,7 @@ The possible subcommands are:
 of the object. 'Sun' and 'Moon' (not case-sensitive) are special cases,
 and cause the Sun or Moon to be added. Anything else is assumed to be
 the name of a star, and its coordinates must be given, in the following
-order: right ascension (in either degrees or hours, minutes, or
+order: right ascension (in either degrees or hours, minutes, and
 seconds), declination (in degrees), range (optionally with units of
 meters ('m'), kilometers ('km'), astronomical units ('au'), light years
 ('ly'), or parsecs ('pc', the default) appended), proper motion in right
@@ -5672,7 +5660,7 @@ currently only covers Iridium satellites. The arguments are a subcommand
 (defaulting to 'show'), and possibly further arguments that depend on
 that subcommand.  Briefly, the valid subcommands are:
 
-add - adds a body to the status table, possibly replacing an existing
+C<add> - adds a body to the status table, possibly replacing an existing
 entry. The arguments are OID, type, status, name, and comment. The type
 would typically be 'iridium', and status typically '+' (operational),
 'S' (spare), or '-' (failed). Name and comment default to empty.
@@ -6002,7 +5990,7 @@ This numeric attribute specifies the offset in elevation of the edge of
 the Earth's shadow from the center of the illuminating body (typically
 the Sun) as seen from a body in space. The offset is in units of the
 apparent radius of the illuminating body, so that setting it to C<1>
-specifies the edge of the umbra, <-1> specifies the edge of the
+specifies the edge of the umbra, C<-1> specifies the edge of the
 penumbra, and C<0> specifies the middle of the penumbra. This parameter
 corresponds to the same-named L<Astro::Coord::ECI|Astro::Coord::ECI>
 parameter.
@@ -6098,10 +6086,11 @@ C<'Astro::App::Satpass2::Format::'> may be omitted.
 
 Minimal constraints on the formatter class are imposed, but while it
 need not be a subclass of
-L<Astro::App::Satpass2::Format|Astro::App::Satpass2::Format>, it C<must> conform to
-that class' interface.
+L<Astro::App::Satpass2::Format|Astro::App::Satpass2::Format>, it B<must>
+conform to that class' interface.
 
-The default is C<'Astro::App::Satpass2::Format::Classic'>.
+The default is
+L<Astro::App::Satpass::Format::Template|Astro::App::Satpass::Format::Template>.
 
 =head2 geocoder
 
@@ -6109,7 +6098,8 @@ This attribute specifies which geocoding service can be used. It takes
 as its value any subclass of
 L<Astro::App::Satpass2::Geocode|Astro::App::Satpass2::Geocode> -- either
 an actual instantiated object or a class name. If the class name is
-omitted, the leading C<Astro::App::Satpass2::Geocode::> can be omitted.
+specified, the leading C<Astro::App::Satpass2::Geocode::> can be
+omitted.
 
 The default is the first of
 L<Astro::App::Satpass2::Geocode::Geocoder::US|Astro::App::Satpass2::Geocode::Geocoder::US>,
@@ -6336,12 +6326,13 @@ The default is 0 (i.e. false).
 =head2 spacetrack attribute
 
 This attribute is the L<Astro::SpaceTrack|Astro::SpaceTrack> object used
-by the L</st> method. You must set it to an Astro::SpaceTrack object, or
-to undef to clear the attribute. If no
-L<Astro::SpaceTrack|Astro::SpaceTrack> object has been explicitly set,
-the L</st> method will attempt to load
-L<Astro::SpaceTrack|Astro::SpaceTrack> and set this attribute itself. If
-it succeeds, this object will be available to the L</get> method.
+by the L<spacetrack()|/spacetrack> method. You must set it to an
+L<Astro::SpaceTrack|Astro::SpaceTrack> object, or to undef to clear the
+attribute. If no L<Astro::SpaceTrack|Astro::SpaceTrack> object has been
+explicitly set, the L<spacetrack()|/spacetrack> method will attempt to
+load L<Astro::SpaceTrack|Astro::SpaceTrack> and set this attribute
+itself. If it succeeds, this object will be available to the L</get>
+method.
 
 This attribute may only be manipulated programmatically; it may not be
 gotten or set via the L</dispatch> method, and therefore not by the
@@ -6916,12 +6907,6 @@ rewritten output mechanism is not capable of actually displaying output
 in realtime, and handling multiple times in a system that separates
 formatting from computation appeared to be too difficult to tackle
 without an incentive.
-
-=item status
-
-The C<iridium> subcommand is deprecated, and will be removed when it is
-removed from the C<satpass> script, or when support for compatibility
-with C<satpass> is dropped.
 
 =back
 

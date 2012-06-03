@@ -9,7 +9,7 @@ use Clone ();
 use Astro::App::Satpass2::FormatTime;
 use Astro::App::Satpass2::Utils qw{ load_package };
 
-our $VERSION = '0.003';
+our $VERSION = '0.004';
 
 use constant DEFAULT_LOCAL_COORD => 'azel_rng';
 
@@ -589,7 +589,7 @@ The following other methods are provided.
 
 =head3 config
 
- use YAML::Any;
+ use YAML;
  print Dump ( $pt->config( changes => 1 ) );
 
 This method retrieves the configuration of the formatter as an array of

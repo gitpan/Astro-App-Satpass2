@@ -9,7 +9,7 @@ use base qw{ Astro::App::Satpass2::Geocode };
 
 use Astro::App::Satpass2::Utils qw{ instance };
 
-our $VERSION = '0.003';
+our $VERSION = '0.004';
 
 use constant GEOCODER_CLASS => 'Geo::Coder::TomTom';
 
@@ -50,7 +50,7 @@ Astro::App::Satpass2::Geocode::TomTom - Wrapper for Geo::Coder::TomTom
 =head1 SYNOPSIS
 
  use Astro::App::Satpass2::Geocode::TomTom;
- use YAML::Any;
+ use YAML;
  
  my $gc = Astro::App::Satpass2::Geocode::TomTom->new();
  print Dump( $gc->geocode( '1600 Pennsylvania Ave, Washington DC' );
