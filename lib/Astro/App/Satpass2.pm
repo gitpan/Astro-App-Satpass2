@@ -44,7 +44,7 @@ BEGIN {
 	};
 }
 
-our $VERSION = '0.004';
+our $VERSION = '0.004_01';
 
 # The following 'cute' code is so that we do not determine whether we
 # actually have optional modules until we really need them, and yet do
@@ -2067,6 +2067,9 @@ sub source : Verb( optional! ) {
 	my ( $rslt, @rest ) = $handler{$method} ?
 	    $handler{$method}->( $self, $object, $method, $opt, @args ) :
 	    $object->$method( $opt, @args );
+
+	$rslt->is_success()
+	    or $self->_wail( $rslt->status_line() );
 
 	my $output;
 	my $content_type = $object->content_type || '';
