@@ -10,7 +10,7 @@ use base qw{ Exporter };
 use Astro::App::Satpass2::Utils qw{ load_package };
 use Test::More 0.88;
 
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 
 our @EXPORT_OK = qw{ setup geocode };
 our @EXPORT = @EXPORT_OK;
@@ -57,7 +57,7 @@ sub geocode ($;$) {
     $wrapper_object
 	or skip "$wrapper_class instantiation failed", 1;
 
-    my @codings = eval {
+    () = eval {	# Force eval() to be in list context.
 	$wrapper_object->geocode( $loc )
     } and do {
 	@_ = ( "Geocode '$loc'" );

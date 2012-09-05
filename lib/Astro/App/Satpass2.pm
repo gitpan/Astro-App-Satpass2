@@ -44,7 +44,7 @@ BEGIN {
 	};
 }
 
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 
 # The following 'cute' code is so that we do not determine whether we
 # actually have optional modules until we really need them, and yet do
@@ -155,6 +155,7 @@ my %twilight_abbr = abbrev (keys %twilight_def);
 }
 
 my %mutator = (
+    almanac_horizon	=> \&_set_almanac_horizon,
     appulse => \&_set_angle,
     autoheight => \&_set_unmodified,
     backdate => \&_set_unmodified,
@@ -260,11 +261,9 @@ my %nointeractive = map {$_ => 1} qw{
 };
 
 #	Initial object contents
-#
-#	CAVEAT: only scalars here, since we do a shallow clone to create
-#	the object from this.
 
 my %static = (
+    almanac_horizon	=> 0,
     appulse => 0,
     autoheight => 1,
     background => 1,
@@ -330,7 +329,7 @@ sub new {
 	exists $args{$name} or $args{$name} = $static{$name};
     }
 
-    my $warner = $self->{_warner} = Astro::App::Satpass2::Warner->new(
+    $self->{_warner} = Astro::App::Satpass2::Warner->new(
 	warning => delete $args{warning}
     );
 
@@ -1266,7 +1265,6 @@ sub position : Verb( choose=s@ questionable|spare! quiet! ) {
     } else {
 	$time = time;
     }
-    my $twilight = $self->{_twilight};
 
 
 #	Define the observing station.
@@ -1506,6 +1504,17 @@ sub set : Verb() {
     return;
 }
 
+sub _set_almanac_horizon {
+    my ( $self, $name, $value ) = @_;
+    my $eci = Astro::Coord::ECI->new();
+    my $parsed = _parse_angle( $value );
+    $eci->set( almanac_horizon => $parsed );	# To validate.
+    my $internal = looks_like_number( $parsed ) ? deg2rad( $parsed ) :
+    $parsed;
+    $self->{"_$name"} = $internal;
+    return( $self->{$name} = $parsed );
+}
+
 sub _set_angle {
     return ($_[0]{$_[1]} = _parse_angle ($_[2]));
 }
@@ -1567,7 +1576,6 @@ sub _set_copyable {
 	}
 	push @args, substr $arg{value}, $base;
 	my $pkg = shift @args;
-	my @prefix = @{ $arg{prefix} || [] };
 	my $cls = load_package( $pkg, @{ $arg{prefix} || [] } )
 	    or $self->_wail( "Unable to load $pkg" );
 	$obj = $cls->new(
@@ -2126,14 +2134,18 @@ sub st : Verb() {
 
 sub station {
     my ( $self ) = @_;
+
     defined $self->{height}
 	and defined $self->{latitude}
 	and defined $self->{longitude}
 	or $self->_wail( 'You must set height, latitude, and longitude' );
+
     return Astro::Coord::ECI->new (
-	    refraction => 1,
-	    name => $self->{location} || '',
-	    id => 'station',
+	    almanac_horizon	=> $self->{_almanac_horizon},
+	    horizon	=> $self->get( 'horizon' ),
+	    id		=> 'station',
+	    name	=> $self->{location} || '',
+	    refraction	=> 1,
 	)->geodetic (
 	    deg2rad( $self->{latitude} ),
 	    deg2rad( $self->{longitude} ),
@@ -2429,10 +2441,12 @@ sub _choose {
 	    $match = !$match;
 	} else {
 	    my $name = ref $tle eq 'ARRAY' ? $tle->[1] : $tle->get('name');
-	    foreach my $re (@regex) {
-		$name =~ m/ $re /smx or next;
-		$match = !$match;
-		last;
+	    if ( defined $name ) {
+		foreach my $re (@regex) {
+		    $name =~ m/ $re /smx or next;
+		    $match = !$match;
+		    last;
+		}
 	    }
 	}
 	$match and push @rslt, $tle;
@@ -2466,7 +2480,7 @@ sub _choose {
 	    desired_equinox_dynamical	=> 0,
 	    explicit_macro_delete	=> 0,
 	    gmt		=> 0,
-	    lit		=> 0,
+	    lit		=> 2,
 	    local_coord	=> 0,
 	    perltime	=> 0,
 	    time_format	=> 0,
@@ -6200,8 +6214,12 @@ and C<lit> is implemented in terms of that attribute. Note that any
 non-zero value of L<edge_of_earths_shadow|/edge_of_earths_shadow> will
 cause C<< $app->get( 'lit' ) >> to return true.
 
+Like the current C<satpass> script, every use of this attribute will
+result in a warning. In the first release on or after March 1 2013, this
+will become fatal.
+
 This boolean attribute specifies how to determine if a body is lit by
-the Sun.  If true (i.e. 1) it is considered to be lit if the upper limb
+the Sun. If true (i.e. 1) it is considered to be lit if the upper limb
 of the sun is above the horizon, as seen from the body. If false (i.e.
 0), the body is considered lit if the center of the sun is above the
 horizon.

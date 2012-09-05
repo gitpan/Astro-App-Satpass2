@@ -21,7 +21,7 @@ our @CARP_NOT = ( qw{
     Astro::App::Satpass2::ParseTime::ISO8601
 } );
 
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 
 sub new {
     my ( $class, @arg ) = @_;
@@ -32,7 +32,7 @@ sub new {
 	my ( $name, $value ) = splice @arg, 0, 2;
 	my $code = $self->can( $name )
 	    or $self->wail( "Warner has no such method as $name" );
-	$self->$name( $value );
+	$code->( $self, $value );
     }
     return $self;
 }
