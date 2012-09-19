@@ -17,7 +17,7 @@ use POSIX qw{ floor };
 use Scalar::Util qw{ reftype };
 use Text::Wrap ();
 
-our $VERSION = '0.007_02';
+our $VERSION = '0.007_03';
 
 use constant NONE => undef;
 use constant TITLE_GRAVITY_BOTTOM	=> 'bottom';
@@ -2102,7 +2102,10 @@ sub _format_number_scientific {
     $tplt .= 'e';
 
     my $buffer = sprintf $tplt, $value;
-    $buffer =~ s/ e ( [-+]? ) 0 (\d\d) \z /e$1$2/smx;	# Normalize
+    $buffer =~ s/ e ( [-+]? ) 0 (\d\d) \z /e$1$2/smx	# Normalize
+	and $width
+	and $width > length $buffer
+	and $buffer = ' ' . $buffer;	# Preserve width after normalize
 
     $width
 	or return $buffer;
