@@ -44,7 +44,7 @@ BEGIN {
 	};
 }
 
-our $VERSION = '0.007_03';
+our $VERSION = '0.007_04';
 
 # The following 'cute' code is so that we do not determine whether we
 # actually have optional modules until we really need them, and yet do
@@ -6737,6 +6737,11 @@ The only redirections that actually work at the moment are C<< > >>
 C<< << >> (here documents, which are not really a redirection). Unless
 the here document terminator is enclosed in single quotes, interpolation
 is done inside the here document.
+
+B<Caveat:> redirection tests fail under MSWin32 -- or at least they did
+until I bypassed them under that operating system. I do not know if this
+is a failure of the redirection mechanism or a problem with the test. I
+suspect the latter, but will welcome evidence of the former.
 
 Any unquoted token or redirection file name which begins with a tilde
 (C<~>) has tilde expansion performed on everything up to the first slash
