@@ -44,7 +44,7 @@ BEGIN {
 	};
 }
 
-our $VERSION = '0.008';
+our $VERSION = '0.009';
 
 # The following 'cute' code is so that we do not determine whether we
 # actually have optional modules until we really need them, and yet do
@@ -2054,11 +2054,12 @@ sub source : Verb( optional! ) {
 	},
 	set	=> sub {
 	    my ( $self, $obj, $method, $opt, @args ) = @_;
-	    return $obj->set( @args );
+	    return $obj->$method( @args );
 	},
     );
     $handler{getv} = $handler{get};
     $handler{show} = $handler{config};
+    $handler{spacetrack_query_v2} = $handler{set};
 
     my %suppress_output = map { $_ => 1 } '', 'set';
 
