@@ -8,7 +8,7 @@ use base qw{ Astro::App::Satpass2::Copier };
 use Astro::App::Satpass2::Utils qw{ load_package };
 use Astro::Coord::ECI::Utils qw{ looks_like_number };
 
-our $VERSION = '0.009';
+our $VERSION = '0.010';
 
 my %static = (
     perltime	=> 0,
@@ -17,6 +17,12 @@ my %static = (
 sub new {
     my ( $class, %args ) = @_;
     ref $class and $class = ref $class;
+
+    # Workaround for bug (well, _I_ think it's a bug) introduced into
+    # Date::Manip with 6.34, while fixing RT #78566. My bug report is RT
+    # #80435.
+    my $path = $ENV{PATH};
+    local $ENV{PATH} = $path;
 
     if ( __PACKAGE__ eq $class ) {
 
