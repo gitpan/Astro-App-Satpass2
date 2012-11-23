@@ -44,7 +44,7 @@ BEGIN {
 	};
 }
 
-our $VERSION = '0.010';
+our $VERSION = '0.010_01';
 
 # The following 'cute' code is so that we do not determine whether we
 # actually have optional modules until we really need them, and yet do
@@ -2192,10 +2192,8 @@ sub station {
 
 	} elsif ($verb eq 'show' || $verb eq 'list') {
 
-	    my @data = Astro::Coord::ECI::TLE->status ('show');
+	    my @data = Astro::Coord::ECI::TLE->status( 'show', @args );
 	    @data = sort {$a->[3] cmp $b->[3]} @data if $opt->{name};
-	    @args and @data = map {$_->[2]} @{_choose(\@args,
-		    [map {[$_->[0], $_->[3], $_]} @data])};
 	    $output .= '';	# Don't want it to be undef.
 
 	    foreach my $tle (@data) {
