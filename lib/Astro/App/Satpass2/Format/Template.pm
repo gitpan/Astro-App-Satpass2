@@ -6,7 +6,7 @@ use warnings;
 use base qw{ Astro::App::Satpass2::Format };
 
 use Astro::App::Satpass2::Format::Template::Provider;
-use Astro::App::Satpass2::FormatValue;
+# use Astro::App::Satpass2::FormatValue;
 use Astro::App::Satpass2::Utils qw{ instance };
 use Astro::App::Satpass2::Wrap::Array;
 use Astro::Coord::ECI::TLE qw{ :constants };
@@ -20,7 +20,7 @@ use Template::Provider;
 use Text::Abbrev;
 use Text::Wrap qw{ wrap };
 
-our $VERSION = '0.012';
+our $VERSION = '0.012_01';
 
 my %template_definitions = (
 
@@ -399,11 +399,13 @@ sub format : method {	## no critic (ProhibitBuiltInHomonyms)
 	$data{time} = $self->_wrap( { time => time } );
     }
 
+    my $value_formatter = $self->value_formatter();
+
     $data{title} = $self->_wrap( undef, $data{default} );
     $data{TITLE_GRAVITY_BOTTOM} =
-	Astro::App::Satpass2::FormatValue->TITLE_GRAVITY_BOTTOM;
+	$value_formatter->TITLE_GRAVITY_BOTTOM;
     $data{TITLE_GRAVITY_TOP} =
-	Astro::App::Satpass2::FormatValue->TITLE_GRAVITY_TOP;
+	$value_formatter->TITLE_GRAVITY_TOP;
 
     if ( 'ARRAY' eq ref $data{arg} ) {
 	my @arg = @{ $data{arg} };
@@ -549,7 +551,8 @@ sub _wrap {
     if ( instance( $data, 'Astro::App::Satpass2::FormatValue' ) ) {
 	# Do nothing
     } elsif ( ! defined $data || 'HASH' eq ref $data ) {
-	$data = Astro::App::Satpass2::FormatValue->new(
+	my $value_formatter = $self->value_formatter();
+	$data = $value_formatter->new(
 	    data	=> $data,
 	    default	=> $default,
 	    date_format => $self->date_format(),
@@ -1235,7 +1238,7 @@ Thomas R. Wyant, III F<wyant at cpan dot org>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2010-2012 by Thomas R. Wyant, III
+Copyright (C) 2010-2013 by Thomas R. Wyant, III
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl 5.10.0. For more details, see the full text

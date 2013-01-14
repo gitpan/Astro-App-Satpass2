@@ -7,11 +7,15 @@ use warnings;
 
 use base qw{ Exporter };
 
+use File::HomeDir;
+use File::Spec;
 use Scalar::Util qw{ blessed looks_like_number };
 
-our $VERSION = '0.012';
+our $VERSION = '0.012_01';
 
-our @EXPORT_OK = qw{ has_method instance load_package quoter };
+our @EXPORT_OK = qw{
+    has_method instance load_package merge_hashes my_dist_config quoter
+};
 
 sub has_method {
     my ( $object, $method ) = @_;
@@ -31,9 +35,22 @@ sub instance {
 
 {
     my %loaded;
+    my $my_lib = my_dist_config();
+    defined $my_lib
+	and $my_lib = File::Spec->catdir( $my_lib, 'lib' );
+    -d $my_lib
+	or $my_lib = undef;
+
     sub load_package {
 	my ( $module, @prefix ) = @_;
 	defined $module or $module = '';
+
+	local @INC = @INC;
+
+	if ( defined $my_lib ) {
+	    require lib;
+	    lib->import( $my_lib );
+	}
 
 	foreach ( $module, @prefix ) {
 	    '' eq $_
@@ -65,6 +82,32 @@ sub instance {
 
 	return ( $loaded{$key} = undef );
     }
+}
+
+
+# The Perl::Critic annotation on the following line should not (strictly
+# speaking) be necessary - but Subroutines::RequireArgUnpacking does not
+# understand the unpacking to be subject to the configuration
+#     allow_arg_unpacking = grep
+sub merge_hashes {	## no critic (RequireArgUnpacking)
+    my @args = grep { 'HASH' eq ref $_ } @_;
+    @args == 1
+	and return $args[0];
+    my %rslt;
+    foreach my $hash ( @args ) {
+	@rslt{ keys %{ $hash } } = values %{ $hash };
+    }
+    return \%rslt;
+}
+
+
+sub my_dist_config {
+    my ( $opt ) = @_;
+
+    return File::HomeDir->my_dist_config(
+	'Astro-App-Satpass2',
+	{ create => $opt->{'create-directory'} },
+    );
 }
 
 
@@ -146,6 +189,34 @@ actually loaded. If no attempt succeeds, C<undef> is returned.
 Arguments are cached, and subsequent attempts to load a module simply
 return the contents of the cache.
 
+=head2 merge_hashes
+
+ my $hash_ref = merge_hashes( \%hash1, \%hash2, ... );
+
+This subroutine returns a reference to a hash that contains keys merged
+from all the hash references passed as arguments. Arguments which are
+not hash references are removed before processing. If there are no
+arguments, an empty hash is returned. If there is exactly one argument,
+it is returned. If there is more than one argument, a new hash is
+constructed from all keys of all hashes, and that hash is returned. If
+the same key appears in more than one argument, the value from the
+right-most argument is the one returned.
+
+=head2 my_dist_config
+
+ my $cfg_dir = my_dist_config( { 'create-directory' => 1 } );
+
+This subroutine simply wraps
+
+ File::HomeDir->my_dist_config( 'Astro-App-Satpass2' );
+
+You can pass an optional reference to an options hash (sic!). The only
+supported option is {'create-directory'}, which is passed verbatim to
+the C<File::HomeDir> C<'create'> option.
+
+If the configuration directory is found or successfully created, the
+path to it is returned. Otherwise C<undef> is returned.
+
 =head2 quoter
 
  quoter( $string )
@@ -176,7 +247,7 @@ Thomas R. Wyant, III F<wyant at cpan dot org>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2011-2012 by Thomas R. Wyant, III
+Copyright (C) 2011-2013 by Thomas R. Wyant, III
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl 5.10.0. For more details, see the full text

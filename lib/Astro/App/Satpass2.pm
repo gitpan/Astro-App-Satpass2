@@ -6,7 +6,9 @@ use strict;
 use warnings;
 
 use Astro::App::Satpass2::ParseTime;
-use Astro::App::Satpass2::Utils qw{ has_method instance load_package quoter };
+use Astro::App::Satpass2::Utils qw{
+    has_method instance load_package my_dist_config quoter
+};
 
 use Astro::Coord::ECI 0.049;			# This really needs 0.049.
 use Astro::Coord::ECI::Moon 0.049;
@@ -44,7 +46,7 @@ BEGIN {
 	};
 }
 
-our $VERSION = '0.012';
+our $VERSION = '0.012_01';
 
 # The following 'cute' code is so that we do not determine whether we
 # actually have optional modules until we really need them, and yet do
@@ -933,8 +935,8 @@ sub init {
 sub initfile : Verb( create-directory! quiet! ) {
     my ( $self, $opt, @args ) = _arguments( @_ );
 
-    my $init_dir = File::HomeDir->my_dist_config(
-	'Astro-App-Satpass2', { create => $opt->{'create-directory'} } );
+    my $init_dir = my_dist_config(
+	{ create => $opt->{'create-directory'} } );
 
     defined $init_dir
 	or do {
@@ -2299,7 +2301,7 @@ sub version : Verb() {
 
 @{[__PACKAGE__]} $VERSION - Satellite pass predictor
 based on Astro::Coord::ECI @{[Astro::Coord::ECI->VERSION]}
-Copyright (C) 2009-2012 by Thomas R. Wyant, III
+Copyright (C) 2009-2013 by Thomas R. Wyant, III
 
 EOD
 }
@@ -2535,6 +2537,8 @@ sub _choose {
 #	The code snippet will return undef at end-of-file.
 #
 #	The following keys in %opt are recognized:
+#	{glob} causes the contents of the file to be returned, rather
+#	    than a reader.
 #	{optional} causes the code to simply return on an error, rather
 #	    than failing.
 
@@ -2575,9 +2579,10 @@ sub _file_reader_ {
 	    $self->_wail( "Failed to retrieve $file: ",
 		$resp->status_line() );
 	};
+	$opt->{glob} and return $resp->content();
 	return $self->_file_reader( \( scalar $resp->content() ), $opt );
     } else {
-	my $fh = IO::File->new( $file, '<' )
+	my $fh = IO::File->new( $self->_tilde_expand( $file ), '<' )
 	    or do {
 	    $opt->{optional} and return;
 	    $self->_wail( "Failed to open $file: $!" );
@@ -3432,6 +3437,8 @@ sub _read_continuation {
 	    or return $buffer;
 	$buffer =~ m/ \A \s* \z /sxm
 	    and return $buffer;
+	$buffer =~ s/ \A \s* [#] 2 [#] \s* //sxm
+	    and return $buffer;
 	$buffer =~ m/ \A \s* [#] /sxm
 	    and return $buffer;
 
@@ -4241,13 +4248,18 @@ sub _user_home_dir {
 	foreach (@rslt) {
 	    exists $_->{token} or next;
 	    if ($_->{redirect}) {
-		my $type = $_->{type};
-		$redir{$type} = {
-		    mode => $_->{mode},
-		    name => ($_->{expand} ?
-			$self->_tilde_expand($_->{token}) :
-			$_->{token}),
-		};
+		if ( $_->{mode} eq '<' ) {
+		    push @tokens, $self->_file_reader(
+			$_->{token}, { glob => 1 } );
+		} else {
+		    my $type = $_->{type};
+		    $redir{$type} = {
+			mode => $_->{mode},
+			name => ($_->{expand} ?
+			    $self->_tilde_expand($_->{token}) :
+			    $_->{token}),
+		    };
+		}
 	    } else {
 		push @tokens, $_->{tilde} ? $self->_tilde_expand($_->{token}) :
 		    $_->{token};
@@ -6731,11 +6743,13 @@ vertical bar character (C<|>) introduce a redirection specification
 (and, incidentally, a new token). Anything after the meta-characters in
 the same token is taken to be the file or program name.
 
-The only redirections that actually work at the moment are C<< > >>
-(output redirection), C<<< >> >>> (output redirection with append), and
-C<< << >> (here documents, which are not really a redirection). Unless
-the here document terminator is enclosed in single quotes, interpolation
-is done inside the here document.
+The only redirections that actually work are C<< > >> (output
+redirection) and C<<< >> >>> (output redirection with append).  The
+C<< < >> and C<<< << >>> look like input redirections but are not, at
+least not in the sense of making data appear on standard in. The first
+is replaced by the contents of the given file or URL. The second works
+like a Perl here document, and interpolates unless the here document
+terminator is enclosed in single quotes.
 
 B<Caveat:> redirection tests fail under MSWin32 -- or at least they did
 until I bypassed them under that operating system. I do not know if this
@@ -7056,7 +7070,7 @@ Thomas R. Wyant, III (F<wyant at cpan dot org>)
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2009-2012 by Thomas R. Wyant, III
+Copyright (C) 2009-2013 by Thomas R. Wyant, III
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl 5.10.0. For more details, see the full text
