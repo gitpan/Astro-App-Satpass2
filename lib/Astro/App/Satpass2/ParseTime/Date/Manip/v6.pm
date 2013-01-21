@@ -6,11 +6,11 @@ use warnings;
 use Astro::Coord::ECI::Utils qw{ looks_like_number };
 use Time::Local;
 
-use base qw{ Astro::App::Satpass2::ParseTime };
+use base qw{ Astro::App::Satpass2::ParseTime::Date::Manip };
 
 use Astro::App::Satpass2::Utils qw{ load_package };
 
-our $VERSION = '0.012_01';
+our $VERSION = '0.012_02';
 
 my $invalid;
 

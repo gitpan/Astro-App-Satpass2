@@ -46,7 +46,7 @@ BEGIN {
 	};
 }
 
-our $VERSION = '0.012_01';
+our $VERSION = '0.012_02';
 
 # The following 'cute' code is so that we do not determine whether we
 # actually have optional modules until we really need them, and yet do
@@ -1464,7 +1464,9 @@ EOD
 
     foreach my $attribute ( qw{ formatter spacetrack time_parser } ) {
 	my $obj = $self->get( $attribute ) or next;
-	my $class = ref $obj;
+	my $class = $obj->can( 'class_name_of_record' ) ?
+	    $obj->class_name_of_record() :
+	    ref $obj || $obj;
 	$output .= <<"EOD" .
 
 # $class $title
@@ -1772,7 +1774,7 @@ sub show : Verb( changes! deprecated! readonly! ) {
 sub _show_copyable {
     my ( $self, $name ) = @_;
     my $obj = $self->get( $name );
-    my $val = ref $obj || $obj;
+    my $val = $obj->class_name_of_record();
     return ( 'set', $name, $val );
 }
 
@@ -2245,7 +2247,7 @@ sub time : method Verb() {	## no critic (ProhibitBuiltInHomonyms,RequireArgUnpac
 }
 
 sub time_parser : Verb() {
-    splice @_, ( 'HASH' eq ref $_[1] ? 2 : 1 ), 0, 'formatter';
+    splice @_, ( 'HASH' eq ref $_[1] ? 2 : 1 ), 0, 'time_parser';
     goto &_helper_handler;
 }
 
@@ -4489,14 +4491,13 @@ installed, C<Astro::App::Satpass2> will use it to parse times. If it is
 not available a home-grown ISO-8601-ish parser will be used. There are
 really three options here:
 
-* If you have Perl 5.10 or above, you can install the latest version of
+* If you have Perl 5.10 or above, you have the full functionality of
 L<Date::Manip|Date::Manip>.
 
-* If you a Perl before 5.10, the latest version of
-L<Date::Manip|Date::Manip> will not work, and you will have to install
-version 5.56. This version of C<Date::Manip> is known not to support
-summer time (or daylight saving time, if you will), and may have other
-deficiencies versus the current release.
+* If you a Perl before 5.10, you can (as of this writing) install the
+latest L<Date::Manip|Date::Manip>, but you will be using the version 5
+back end, which may not support summer time (a.k.a. daylight saving
+time) and may have other deficiencies versus the current release.
 
 * The home-grown parser is
 L<Astro::App::Satpass2::ParseTime::ISO86O1|Astro::App::Satpass2::ParseTime::ISO8601>.
