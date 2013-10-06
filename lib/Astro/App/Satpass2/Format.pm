@@ -9,7 +9,7 @@ use Clone ();
 use Astro::App::Satpass2::FormatTime;
 use Astro::App::Satpass2::Utils qw{ load_package };
 
-our $VERSION = '0.013';
+our $VERSION = '0.013_01';
 
 use constant DEFAULT_LOCAL_COORD => 'azel_rng';
 
@@ -123,7 +123,7 @@ sub attribute_names {
 	    my $rslt = $self->$method( @args );
 	    @args and return $rslt;
 	    $rslt or return $rslt;
-	    return $self->{time_formatter}->strftime(
+	    return $self->{time_formatter}->format_datetime(
 		$self->{time_formatter}->ISO_8601_FORMAT(),
 		$rslt, 1 );
 	},

@@ -29,6 +29,7 @@ appulsed
 appulses
 argumentofperigee
 ascendingnode
+ASCIIbetical
 Astro
 astro
 au
@@ -109,6 +110,7 @@ ly
 meananomaly
 meanmotion
 merchantability
+mixin
 mma
 MSWin
 noappulse
@@ -117,6 +119,7 @@ NORAD
 observability
 oid
 OID
+OIDs
 op
 org
 parsers
@@ -126,7 +129,10 @@ perigee
 perltime
 pm
 POSIX
+pre
 precessed
+preprocessed
+preprocessing
 programmatically
 pwd
 quoter
@@ -134,6 +140,7 @@ radian
 radians
 rc
 realtime
+reblessed
 redirections
 redistributions
 reportable
@@ -174,6 +181,8 @@ trampoline
 tt
 tz
 uk
+unanchored
+unblessed
 unexport
 unexported
 unlocalized
