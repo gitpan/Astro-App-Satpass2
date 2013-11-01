@@ -27,7 +27,7 @@ use Cwd ();
 use File::Glob qw{ :glob };
 use File::HomeDir;
 use File::Temp;
-use Getopt::Long;
+use Getopt::Long 2.33;
 use IO::File 1.14;
 use IO::Handle;
 use POSIX qw{ floor };
@@ -49,7 +49,7 @@ BEGIN {
 	};
 }
 
-our $VERSION = '0.014';
+our $VERSION = '0.014_01';
 
 # The following 'cute' code is so that we do not determine whether we
 # actually have optional modules until we really need them, and yet do
@@ -1438,72 +1438,82 @@ sub quarters : Verb( choose=s@ dump! ) {
 
 }
 
-sub run {
-    (my $self, local @ARGV) = @_;
+{
+    my $go;
 
-    # We can be called statically. If we are, instantiate.
-    ref $self or $self = $self->new(warning => 1);
+    sub run {
+	my ( $self, @args ) = @_;
 
-    # If the undocumented first option is a code reference, use it to
-    # get input.
-    my $in;
-    ref $ARGV[0] eq 'CODE' and $in = shift @ARGV;
+	# We can be called statically. If we are, instantiate.
+	ref $self or $self = $self->new(warning => 1);
 
-    # Parse the command options. -level1 is undocumented.
-    my %opt;
-    GetOptions( \%opt, qw{ echo! filter! initialization_file|initfile=s
-	gmt!  help level1! version },
-    )
-	or $self->wail( "See the help method for valid options" );
+	# If the undocumented first option is a code reference, use it to
+	# get input.
+	my $in;
+	ref $args[0] eq 'CODE' and $in = shift @args;
 
-    # If -version, do it and return.
-    if ( $opt{version} ) {
-	print $self->version();
-	return;
-    }
+	# Parse the command options. -level1 is undocumented.
+	my %opt;
+	$go ||= Getopt::Long::Parser->new();
+	$go->getoptionsfromarray(
+	    \@args,
+	    \%opt,
+	    qw{
+		echo! filter! gmt! help initialization_file|initfile=s
+		level1! version
+	    },
+	)
+	    or $self->wail( "See the help method for valid options" );
 
-    # If -help, do it and return.
-    if ( $opt{help} ) {
-	$self->help();
-	return;
-    }
-
-    # Get an input routine if we do not already have one.
-    $in ||= $self->_get_readline();
-
-    # Some options get processed before we initialize.
-    foreach my $name ( qw{ echo filter } ) {
-	exists $opt{$name}
-	    and $self->set( $name => delete( $opt{$name} ) );
-    }
-
-    # Display the front matter if desired.
-    (!$self->get('filter') && $self->_get_interactive())
-	and print $self->version();
-
-    # Execute the initialization file.
-    eval {
-	$self->_execute_output( $self->init(
-		{ level1 => delete $opt{level1} },
-		delete $opt{initialization_file},
-	    ), $self->get( 'stdout' ) );
-	1;
-    } or warn $@;	# Not whinge, since presumably we already did.
-
-    # The remaining options set the corresponding attributes.
-    %opt and $self->set(%opt);
-
-    # Execution loop. What exit() really does is a last on this.
-SATPASS2_EXECUTE:
-    {
-	$self->_execute( @ARGV );
-	while ( defined ( my $buffer = $in->( $self->get( 'prompt' ) ) ) ) {
-	    $self->_execute( $in, $buffer );
+	# If -version, do it and return.
+	if ( $opt{version} ) {
+	    print $self->version();
+	    return;
 	}
+
+	# If -help, do it and return.
+	if ( $opt{help} ) {
+	    $self->help();
+	    return;
+	}
+
+	# Get an input routine if we do not already have one.
+	$in ||= $self->_get_readline();
+
+	# Some options get processed before we initialize.
+	foreach my $name ( qw{ echo filter } ) {
+	    exists $opt{$name}
+		and $self->set( $name => delete( $opt{$name} ) );
+	}
+
+	# Display the front matter if desired.
+	(!$self->get('filter') && $self->_get_interactive())
+	    and print $self->version();
+
+	# Execute the initialization file.
+	eval {
+	    $self->_execute_output( $self->init(
+		    { level1 => delete $opt{level1} },
+		    delete $opt{initialization_file},
+		), $self->get( 'stdout' ) );
+	    1;
+	} or warn $@;	# Not whinge, since presumably we already did.
+
+	# The remaining options set the corresponding attributes.
+	%opt and $self->set(%opt);
+
+	# Execution loop. What exit() really does is a last on this.
+    SATPASS2_EXECUTE:
+	{
+	    $self->_execute( @args );
+	    while ( defined ( my $buffer = $in->( $self->get( 'prompt' ) ) ) ) {
+		$self->_execute( $in, $buffer );
+	    }
+	}
+	$self->_execute( q{echo ''} );	# The lazy way to be sure we
+					    # have a newline before exit.
+	return;
     }
-    $self->_execute( q{echo ''} );	# The lazy way to be sure we
-					# have a newline before exit.
-    return;
 }
 
 sub save : Verb( changes! overwrite! ) {
@@ -2163,9 +2173,14 @@ sub source : Verb( optional! ) {
 	    and $opt->{end_epoch} = $self->__parse_time(
 		$opt->{end_epoch} );
 
-	my ( $rslt, @rest ) = $handler{$method} ?
-	    $handler{$method}->( $self, $object, $method, $opt, @args ) :
-	    $object->$method( $opt, @args );
+	my ( $rslt, @rest );
+       	if ( $handler{$method} ) {
+	    ( $rslt, @rest ) = $handler{$method}->(
+		$self, $object, $method, $opt, @args );
+	} else {
+	    delete $opt->{raw};
+	    ( $rslt, @rest ) = $object->$method( $opt, @args );
+	}
 
 	$rslt->is_success()
 	    or $self->wail( $rslt->status_line() );
@@ -3101,7 +3116,8 @@ sub _helper_get_object {
 	    and $parse_input{$name}
 	    and $parse_input{$name}{$method}
 	    and @args = $parse_input{$name}{$method}->( $self, $opt, @args );
-	$opt->{raw} and return $object->$method( @args );
+	delete $opt->{raw}
+	    and return $object->$method( @args );
 	my $rslt = $object->decode( $method, @args );
 
 	instance( $rslt, ref $object ) and return;

@@ -10,9 +10,10 @@ use base qw{ Exporter };
 use Cwd ();
 use File::HomeDir;
 use File::Spec;
+use Getopt::Long 2.33;
 use Scalar::Util qw{ blessed looks_like_number };
 
-our $VERSION = '0.014';
+our $VERSION = '0.014_01';
 
 our @EXPORT_OK = qw{
     __arguments expand_tilde fold_case
