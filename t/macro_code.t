@@ -10,10 +10,10 @@ use Astro::App::Satpass2::Utils ();
 use Astro::App::Satpass2::Macro::Code;
 use Test::More 0.88;	# Because of done_testing();
 
-use constant lib_dir => 'eg';
+use constant LIB_DIR => 'eg';
 
--d lib_dir
-    or plan skip_all => 'Can not find eg/ directory';
+-d LIB_DIR
+    or plan skip_all => "Can not find @{[ LIB_DIR ]}/ directory";
 
 my ( $mac, $sp );
 
@@ -30,16 +30,19 @@ eval {
 
 eval {
    $mac = Astro::App::Satpass2::Macro::Code->new(
-	lib	=> lib_dir,
-	name	=> 'My::Macros',
+	lib		=> LIB_DIR,
+	relative	=> 1,
+	name		=> 'My::Macros',
 	generate	=> \&Astro::App::Satpass2::_macro_load_generator,
 	parent	=> $sp,
-	warner	=> $sp->{_warner},	# Encapsulation violation
+	warner	=> $sp->{_warner},	# TODO Encapsulation violation
     );
     1;
 } or plan skip_all => "Can not instantiate macro: $@";
 
-cmp_ok scalar $mac->implements(), '==', 4, 'Module implements 4 macros';
+cmp_ok scalar $mac->implements(), '==', 5, 'Module implements 5 macros';
+
+ok $mac->implements( 'after_load' ), 'Module implements after_load()';
 
 ok $mac->implements( 'angle' ), 'Module implements angle()';
 
@@ -50,14 +53,15 @@ ok $mac->implements( 'hi' ), 'Module implements hi()';
 ok $mac->implements( 'test' ), 'Module implements test()';
 
 is $mac->generator(), <<'EOD', 'Module serializes correctly';
-macro load -lib eg My::Macros angle
-macro load -lib eg My::Macros dumper
-macro load -lib eg My::Macros hi
-macro load -lib eg My::Macros test
+macro load -lib eg -relative My::Macros after_load
+macro load -lib eg -relative My::Macros angle
+macro load -lib eg -relative My::Macros dumper
+macro load -lib eg -relative My::Macros hi
+macro load -lib eg -relative My::Macros test
 EOD
 
 is $mac->generator( 'angle' ), <<'EOD', 'Single macro serializes';
-macro load -lib eg My::Macros angle
+macro load -lib eg -relative My::Macros angle
 EOD
 
 is $mac->execute( hi => 'sailor' ), <<'EOD', q{Macro 'hi' executes};

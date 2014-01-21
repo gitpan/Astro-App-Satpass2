@@ -10,19 +10,22 @@ use base qw{ Astro::App::Satpass2::FormatTime };
 use Astro::App::Satpass2::FormatTime::Strftime;
 use POSIX ();
 
-our $VERSION = '0.015';
+our $VERSION = '0.016';
 
 sub format_datetime {
     my ( $self, $tplt, $time, $gmt ) = @_;
+    $time = $self->__round_time_value( $time );
     defined $gmt or $gmt = $self->gmt();
     my @parts;
     if ( ref $time eq 'ARRAY' ) {
 	@parts = @{ $time };
     } elsif ( $gmt ) {
-	@parts = gmtime POSIX::floor( $time + 0.5 );
+	@parts = gmtime $time;
     } else {
 	my $tz = $self->tz();
-	defined $tz and $tz ne '' and local $ENV{TZ} = $tz;
+	defined $tz
+	    and $tz ne ''
+	    and local $ENV{TZ} = $tz;
 	@parts = localtime $time;
     }
     return POSIX::strftime( $tplt, @parts );
@@ -97,7 +100,7 @@ Thomas R. Wyant, III F<wyant at cpan dot org>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2010-2013 by Thomas R. Wyant, III
+Copyright (C) 2010-2014 by Thomas R. Wyant, III
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl 5.10.0. For more details, see the full text

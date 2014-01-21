@@ -13,14 +13,14 @@ use Astro::App::Satpass2::Utils qw{
     my_dist_config quoter
 };
 
-use Astro::Coord::ECI 0.057;			# This needs at least 0.049.
-use Astro::Coord::ECI::Moon 0.057;
-use Astro::Coord::ECI::Star 0.057;
-use Astro::Coord::ECI::Sun 0.057;
-use Astro::Coord::ECI::TLE 0.057 qw{:constants}; # This needs at least 0.057.
-use Astro::Coord::ECI::TLE::Iridium 0.057;	# This needs at least 0.049.
-use Astro::Coord::ECI::TLE::Set 0.057;
-use Astro::Coord::ECI::Utils 0.057 qw{:all};
+use Astro::Coord::ECI 0.059;			# This needs at least 0.049.
+use Astro::Coord::ECI::Moon 0.059;
+use Astro::Coord::ECI::Star 0.059;
+use Astro::Coord::ECI::Sun 0.059;
+use Astro::Coord::ECI::TLE 0.059 qw{:constants}; # This needs at least 0.059.
+use Astro::Coord::ECI::TLE::Iridium 0.059;	# This needs at least 0.049.
+use Astro::Coord::ECI::TLE::Set 0.059;
+use Astro::Coord::ECI::Utils 0.059 qw{:all};
 
 use Clone ();
 use Cwd ();
@@ -31,7 +31,7 @@ use Getopt::Long 2.33;
 use IO::File 1.14;
 use IO::Handle;
 use POSIX qw{ floor };
-use Scalar::Util qw{ blessed openhandle };
+use Scalar::Util qw{ blessed isdual openhandle };
 use Text::Abbrev;
 use Text::ParseWords ();	# Used only for {level1} stuff.
 
@@ -49,7 +49,7 @@ BEGIN {
 	};
 }
 
-our $VERSION = '0.015';
+our $VERSION = '0.016';
 
 # The following 'cute' code is so that we do not determine whether we
 # actually have optional modules until we really need them, and yet do
@@ -1016,7 +1016,8 @@ sub load : Verb( verbose! ) {
     foreach my $fn ( @names ) {
 	$opt->{verbose} and warn "Loading $fn\n";
 	my $data = $self->_file_reader( $fn, { glob => 1 } );
-	push @{$self->{bodies}}, Astro::Coord::ECI::TLE->parse( $data );
+	$self->__add_to_observing_list(
+	    Astro::Coord::ECI::TLE->parse( $data ) );
     }
     return;
 }
@@ -1192,22 +1193,26 @@ sub _macro_load : Verb( lib=s ) {
 	warner	=> $self->{_warner},
     );
     exists $opt->{lib}
-    and $marg{lib} = $opt->{lib};
+	and $marg{lib} = $opt->{lib};
     my $obj = $self->{_macro_load}{$name} ||=
 	Astro::App::Satpass2::Macro::Code->new( %marg );
-    @args or @args = $obj->implements();
-    foreach my $mn ( @args ) {
+    foreach my $mn ( @args ? @args : $obj->implements() ) {
 	$obj->implements( $mn, required => 1 )
 	    and $self->{macro}{$mn} = $obj;
     }
+    $obj->implements( 'after_load', required => 0 )
+	and $output = $self->dispatch( after_load => $opt, $name, @args );
     return $output;
 }
 
 sub _macro_load_generator {
     my ( $self, @args ) = @_;
     my @preamble = qw{ macro load };
-    $self->has_lib()
-	and push @preamble, '-lib', $self->lib();
+    if ( $self->has_lib() ) {
+	push @preamble, '-lib', $self->lib();
+	$self->relative()
+	    and push @preamble, '-relative';
+    }
     push @preamble, $self->name();
     my $output;
     foreach my $macro ( @args ) {
@@ -1318,12 +1323,43 @@ sub pass : Verb( choose=s@ appulse! chronological! dump! events! horizon|rise|se
 	my ( $self, $opt, @passes ) = @_;
 	my @rslt;
 	foreach my $pass ( @passes ) {
-	    @{ $pass->{events} } = grep { $_->{event} == PASS_EVENT_NONE
-	    ||
-		$opt->{ $selector[ $_->{event} ] } } @{ $pass->{events} }
+
+=begin comment
+
+	    @{ $pass->{events} } = grep {
+		    ! isdual( $_->{event} )
+		    || $_->{event} == PASS_EVENT_NONE
+		    || $opt->{ $selector[ $_->{event} ] }
+		} @{ $pass->{events} }
+		and push @rslt, $pass;
+
+=end comment
+
+=cut
+	    @{ $pass->{events} } = grep {
+		_pass_select_event_code( $opt, $_->{event} )
+		} @{ $pass->{events} }
 		and push @rslt, $pass;
 	}
 	return @rslt
+    }
+
+    # Determine whether an event is to be reported for the pass. The
+    # arguments are the $opt hash reference and the event code or name.
+    # Anything that is not a dualvar and not an integer is accepted, on
+    # the presumption that it is an ad-hoc event provided by some
+    # subclass. The null event is always accepted on the presumption
+    # that if the user did not want it he or she would not have asked
+    # for it. Anything that is left is accepted or rejected based on the
+    # option hash and the @selector array (defined above).
+    sub _pass_select_event_code {
+	my ( $opt, $event ) = @_;
+	isdual( $event )
+	    or $event !~ m/ \D /smx
+	    or return 1;
+	$event == PASS_EVENT_NONE
+	    and return 1;
+	return $opt->{ $selector[ $event ] };
     }
 }
 
@@ -1401,41 +1437,50 @@ sub pwd : Verb() {
     return Cwd::cwd() . "\n";
 }
 
-sub quarters : Verb( choose=s@ dump! ) {
-    my ( $self, $opt, @args ) = __arguments( @_ );
+{
+    my @quarter_name = map { "q$_" } 0 .. 3;
 
-    my $start = $self->__parse_time ($args[0], $self->_get_today_midnight());
-    my $end = $self->__parse_time ($args[1] || '+30');
+    sub quarters : Verb( choose=s@ dump! q0|new|spring! q1|first|summer!  q2|full|fall q3|last|winter ) {
+	my ( $self, $opt, @args ) = __arguments( @_ );
 
-    my @sky = $self->__choose( $opt->{choose}, $self->{sky} )
-	or $self->wail( 'No bodies selected' );
+	my $start = $self->__parse_time (
+	    $args[0], $self->_get_today_midnight() );
+	my $end = $self->__parse_time ($args[1] || '+30');
 
-    my @almanac;
+	_apply_boolean_default( $opt, 0, map { "q$_" } 0 .. 3 );
 
-#	Iterate over any background objects, accumulating all
-#	quarter-phases of each until we get one after the
-#	end time. We silently ignore bodies that do not support
-#	the next_quarter() method.
+	my @sky = $self->__choose( $opt->{choose}, $self->{sky} )
+	    or $self->wail( 'No bodies selected' );
 
-    foreach my $body ( @sky ) {
-	next unless $body->can ('next_quarter_hash');
-	$body->universal ($start);
+	my @almanac;
 
-	while (1) {
-	    my $hash = $body->next_quarter_hash();
-	    $hash->{time} > $end and last;
-	    push @almanac, $hash;
+	# Iterate over any background objects, accumulating all
+	# quarter-phases of each until we get one after the end time. We
+	# silently ignore bodies that do not support the next_quarter()
+	# method.
+
+	foreach my $body ( @sky ) {
+	    next unless $body->can ('next_quarter_hash');
+	    $body->universal ($start);
+
+	    while (1) {
+		my $hash = $body->next_quarter_hash();
+		$hash->{time} > $end and last;
+		$opt->{$quarter_name[$hash->{almanac}{detail}]}
+		    or next;
+		push @almanac, $hash;
+	    }
 	}
+
+	# Sort and display the quarter-phase information.
+
+	return $self->__format_data(
+	    almanac => [
+		sort { $a->{time} <=> $b->{time} }
+		@almanac
+	    ], $opt );
+
     }
-
-#	Sort and display the quarter-phase information.
-
-    return $self->__format_data(
-	almanac => [
-	    sort { $a->{time} <=> $b->{time} }
-	    @almanac
-	], $opt );
-
 }
 
 {
@@ -2391,7 +2436,7 @@ sub version : Verb() {
 
 @{[__PACKAGE__]} $VERSION - Satellite pass predictor
 based on Astro::Coord::ECI @{[Astro::Coord::ECI->VERSION]}
-Copyright (C) 2009-2013 by Thomas R. Wyant, III
+Copyright (C) 2009-2014 by Thomas R. Wyant, III
 
 EOD
 }
@@ -2399,6 +2444,20 @@ EOD
 ########################################################################
 
 #	$self->_aggregate( $list_ref );
+
+sub __add_to_observing_list {
+    my ( $self, @args ) = @_;
+    foreach my $body ( @args ) {
+	embodies( $body, 'Astro::Coord::ECI::TLE' )
+	    and next;
+	my $id = $body->get( 'id' );
+	defined $id
+	    or $id = $body->get( 'name' );
+	$self->wail( "Body $id is not a TLE" );
+    }
+    push @{ $self->{bodies} }, @args;
+    return $self;
+}
 
 #	This is just a wrapper for
 #	Astro::Coord::ECI::TLE::Set->aggregate.
@@ -5304,11 +5363,18 @@ The first argument of the C<'load'> subcommand is the name of a Perl
 module (e.g. C<My::Macros>) that implements one or more code macros.
 Subsequent arguments, if any, are the names of macros to load from the
 module. If no subsequent arguments are given, all macros defined by the
-macro are loaded. Code macros are experimental. See
+macro are loaded.
+
+By default, the F<lib/> subdirectory of the user's configuration
+directory is added to C<@INC> before the code macro is loaded. The
+C<-lib> option can be used to specify a different directory.
+
+Code macros are experimental. See
 L<Astro::App::Satpass2::TUTORIAL|Astro::App::Satpass2::TUTORIAL> for how
 to write one.
 
-For subcommands other than 'define', the arguments are macro names.
+For subcommands other than C<'define'> and C<'load'>, the arguments are
+macro names.
 
 The C<brief> and C<list> subcommands return their documented output. The
 C<delete> and C<define> subcommands return nothing.
@@ -5450,12 +5516,56 @@ zone, or GMT if the L</gmt> attribute is true. The end time defaults to
 30 days after the start time. See L</SPECIFYING TIMES> for how to
 specify times.
 
-The following option is available:
+The following options are available:
 
- -dump produces debugging output.
+=over
 
-The -dump option should be considered a troubleshooting tool, which may
-change or disappear without notice.
+=item -choose
+
+ -choose moon
+
+This option selects the body whose quarters are to be computed. It can
+be specified multiple times to select multiple bodies. If omitted, all
+bodies in the sky are selected. Note that in any event bodies that do
+not support the C<next_quarter_hash()> method are skipped.
+
+=item -dump
+
+This option produces debugging output. It should be considered a
+troubleshooting tool, which may change or disappear without notice.
+
+=item -q0, or -new, or -spring
+
+This option causes the time of the zeroth quarter to be displayed. The
+synonyms are appropriate to the Moon and Sun respectively. See below for
+how this is defaulted.
+
+=item -q1, or -first, or -summer
+
+This option causes the time of the first quarter to be displayed. The
+synonyms are appropriate to the Moon and Sun respectively. See below for
+how this is defaulted.
+
+=item -q2, or -full, or -fall
+
+This option causes the time of the second quarter to be displayed. The
+synonyms are appropriate to the Moon and Sun respectively. See below for
+how this is defaulted.
+
+=item -q3, or -last, or -winter
+
+This option causes the time of the third quarter to be displayed. The
+synonyms are appropriate to the Moon and Sun respectively. See below for
+how this is defaulted.
+
+=back
+
+The C<-q0>, C<-q1>, C<-q2>, and C<-q3> options (and their synonyms) are
+defaulted as a group. If none of the group is specified, all are
+asserted by default. If none is asserted but at least one is negated
+(e.g. C<-nonew>), all unspecified members of the group are asserted by
+default. If at least one member of the group is asserted, all
+unspecified members are negated by default.
 
 =head2 run
 
@@ -5938,6 +6048,16 @@ corresponds more or less to C<Carp::confess()>.
 This non-interactive method is simply a wrapper for our
 C<Astro::App::Satpass2::Warner> object's C<whinge()> method, which
 corresponds more or less to C<Carp::carp()>.
+
+=head2 __add_to_observing_list( @bodies );
+
+This method is exposed for the use of code macros, and is unsupported
+until such time as code macros themselves are.
+
+This method adds the given bodies to the observing list. All must
+represent L<Astro::Coord::ECI::TLE|Astro::Coord::ECI::TLE> objects, or
+an exception will be thrown and none will be added to the observing
+list.
 
 =head2 __choose
 
@@ -7321,7 +7441,7 @@ Thomas R. Wyant, III (F<wyant at cpan dot org>)
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2009-2013 by Thomas R. Wyant, III
+Copyright (C) 2009-2014 by Thomas R. Wyant, III
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl 5.10.0. For more details, see the full text

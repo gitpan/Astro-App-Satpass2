@@ -9,8 +9,8 @@ use Astro::App::Satpass2::Format::Template::Provider;
 # use Astro::App::Satpass2::FormatValue;
 use Astro::App::Satpass2::Utils qw{ instance };
 use Astro::App::Satpass2::Wrap::Array;
-use Astro::Coord::ECI::TLE qw{ :constants };
-use Astro::Coord::ECI::Utils qw{
+use Astro::Coord::ECI::TLE 0.059 qw{ :constants };
+use Astro::Coord::ECI::Utils 0.059 qw{
     deg2rad embodies julianday PI rad2deg TWOPI
 };
 use Clone qw{ };
@@ -20,7 +20,7 @@ use Template::Provider;
 use Text::Abbrev;
 use Text::Wrap qw{ wrap };
 
-our $VERSION = '0.015';
+our $VERSION = '0.016';
 
 my %template_definitions = (
 
@@ -103,22 +103,25 @@ EOD
 [% DEFAULT data = sp.list( arg ) %]
 [%- CALL title.title_gravity( TITLE_GRAVITY_BOTTOM ) %]
 [%- WHILE title.more_title_lines %]
-    [%- title.oid( align_left = 0 ) %]
-        [%= title.name %]
-        [%= title.epoch %]
-        [%= title.period( align_left = 1 ) %]
-
-[%- END %]
+    [%- title.list %]
+[% END %]
 [%- FOR item IN data %]
-    [%- IF item.inertial %]
-        [%- item.oid %] [% item.name %] [% item.epoch %]
-            [%= item.period( align_left = 1 ) %]
-    [%- ELSE %]
-        [%- item.oid %] [% item.name %] [% item.latitude %]
-            [%= item.longitude %] [% item.altitude %]
-    [%- END %]
+    [%- item.list( arg ) %]
 [% END -%]
 EOD
+
+    list_inertial => <<'EOD',
+[% data.oid( align_left = 0, arg ) %] [% data.name( arg ) %]
+    [%= data.epoch( arg ) %]
+    [%= data.period( arg, align_left = 1 ) -%]
+EOD
+
+    list_fixed	=> <<'EOD',
+[% data.oid( align_left = 0, arg ) %] [% data.name( arg ) %]
+    [%= data.latitude( arg ) %]
+    [%= data.longitude( arg ) %] [% data.altitude( arg ) -%]
+EOD
+
 
     location	=> <<'EOD',
 [% DEFAULT data = sp.location( arg ) -%]
@@ -407,13 +410,6 @@ sub format : method {	## no critic (ProhibitBuiltInHomonyms)
     $data{TITLE_GRAVITY_TOP} =
 	$value_formatter->TITLE_GRAVITY_TOP;
 
-    if ( 'ARRAY' eq ref $data{arg} ) {
-	my @arg = @{ $data{arg} };
-	$data{arg} = Astro::App::Satpass2::Wrap::Array->new( \@arg );
-    }
-
-    my $output;
-
     local $Template::Stash::LIST_OPS->{bodies} = sub {
 	my ( $list ) = @_;
 	return [ map { $_->body() } @{ $list } ];
@@ -434,8 +430,7 @@ sub format : method {	## no critic (ProhibitBuiltInHomonyms)
 	return;
     };
 
-    $self->{tt}->process( $template, \%data, \$output )
-	or $self->warner()->wail( $self->{tt}->error() );
+    my $output = $self->_process( $template, %data );
 
     # TODO would love to use \h here, but that needs 5.10.
     $output =~ s/ [ \t]+ (?= \n ) //sxmg;
@@ -541,6 +536,18 @@ sub _is_format {
     return;
 }
 
+sub _process {
+    my ( $self, $tplt, %arg ) = @_;
+    'ARRAY' eq ref $arg{arg}
+	and $arg{arg} = Astro::App::Satpass2::Wrap::Array->new(
+	$arg{arg} );
+    my $output;
+    my $tt = $self->{tt};
+    $tt->process( $tplt, \%arg, \$output )
+	or $self->warner()->wail( $tt->error() );
+    return $output;
+}
+
 sub _wrap {
     my ( $self, $data, $default ) = @_;
 
@@ -559,18 +566,26 @@ sub _wrap {
 	    desired_equinox_dynamical =>
 			    $self->desired_equinox_dynamical(),
 	    provider	=> $self->provider(),
+	    round_time	=> $self->round_time(),
 	    time_format => $self->time_format(),
 	    time_formatter => $self->time_formatter(),
 	    local_coordinates => sub {
 		my ( $data, @arg ) = @_;
-		my $output;
-		$self->{tt}->process( $self->local_coord(), {
-			data	=> $data,
-			arg	=>
-			    Astro::App::Satpass2::Wrap::Array->new( \@arg ),
-			title	=> $self->_wrap( undef, $default ),
-		    }, \$output );
-		return $output;
+		return $self->_process( $self->local_coord(),
+		    data	=> $data,
+		    arg		=> \@arg,
+		    title	=> $self->_wrap( undef, $default ),
+		);
+	    },
+	    list_formatter => sub {
+		my ( $data, @arg ) = @_;
+		my $body = $data->body();
+		my $list_type = $body ? $body->__list_type() : 'inertial';
+		return $self->_process( "list_$list_type",
+		    data	=> $data,
+		    arg		=> \@arg,
+		    title	=> $self->_wrap( undef, $default ),
+		);
 	    },
 	    title	=> $title,
 	    warner	=> $self->warner(),
@@ -1238,7 +1253,7 @@ Thomas R. Wyant, III F<wyant at cpan dot org>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2010-2013 by Thomas R. Wyant, III
+Copyright (C) 2010-2014 by Thomas R. Wyant, III
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl 5.10.0. For more details, see the full text

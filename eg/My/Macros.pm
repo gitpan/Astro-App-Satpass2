@@ -8,10 +8,10 @@ use warnings;
 use base qw{ Astro::App::Satpass2 };
 
 use Astro::App::Satpass2::Utils qw{ __arguments };
-use Astro::Coord::ECI::Utils qw{ rad2deg };
+use Astro::Coord::ECI::Utils 0.059 qw{ rad2deg };
 use Scalar::Util qw{ refaddr };
 
-our $VERSION = '0.015';
+our $VERSION = '0.016';
 
 {
     my %operands;
@@ -33,6 +33,18 @@ our $VERSION = '0.015';
 	my ( $code ) = @_;
 	return $operands{ refaddr( $code ) } || 0;
     }
+}
+
+sub after_load : Verb() {
+    my ( $self, $opt, @args ) = @_;
+    my $rslt;
+    foreach my $key ( keys %{ $opt } ) {
+	$rslt .= "-$key $opt->{$key}\n";
+    }
+    foreach my $val ( @args ) {
+	$rslt .= "$val\n";
+    }
+    return $rslt;
 }
 
 sub angle : Verb( radians! places=i ) {
@@ -181,6 +193,16 @@ their results as text.
 This class supports the following public subroutines, which are
 documented as though they are methods of Astro::App::Satpass2:
 
+=head2 after_load
+
+If this subroutine exists, it will be called after the code macro is
+successfully loaded, and passed the processed arguments of the
+C<macro load> command. That is, the first argument (after the invocant)
+will be the option hash, followed by the non-option arguments in order.
+
+This subroutine returns the options (if any) one per line, followed by
+the arguments, also one per line.
+
 =head2 angle
 
  $output = $satpass2->dispatch( angle => 'sun', 'moon', 'today noon' );
@@ -320,7 +342,7 @@ Thomas R. Wyant, III F<wyant at cpan dot org>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2013 by Thomas R. Wyant, III
+Copyright (C) 2013-2014 by Thomas R. Wyant, III
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl 5.10.0. For more details, see the full text
