@@ -6,9 +6,9 @@ use warnings;
 use Clone ();
 
 use Astro::App::Satpass2::Warner;
-use Scalar::Util qw{ blessed };
+use Scalar::Util 1.26 qw{ blessed };
 
-our $VERSION = '0.016_01';
+our $VERSION = '0.016_02';
 
 sub attribute_names {
     return ( qw{ warner } );

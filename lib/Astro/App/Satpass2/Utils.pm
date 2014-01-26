@@ -11,9 +11,9 @@ use Cwd ();
 use File::HomeDir;
 use File::Spec;
 use Getopt::Long 2.33;
-use Scalar::Util qw{ blessed looks_like_number };
+use Scalar::Util 1.26 qw{ blessed looks_like_number };
 
-our $VERSION = '0.016_01';
+our $VERSION = '0.016_02';
 
 our @EXPORT_OK = qw{
     __arguments expand_tilde fold_case

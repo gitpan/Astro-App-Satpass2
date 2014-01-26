@@ -31,7 +31,7 @@ use Getopt::Long 2.33;
 use IO::File 1.14;
 use IO::Handle;
 use POSIX qw{ floor };
-use Scalar::Util qw{ blessed isdual openhandle };
+use Scalar::Util 1.26 qw{ blessed isdual openhandle };
 use Text::Abbrev;
 use Text::ParseWords ();	# Used only for {level1} stuff.
 
@@ -49,7 +49,7 @@ BEGIN {
 	};
 }
 
-our $VERSION = '0.016_01';
+our $VERSION = '0.016_02';
 
 # The following 'cute' code is so that we do not determine whether we
 # actually have optional modules until we really need them, and yet do
