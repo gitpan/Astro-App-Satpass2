@@ -20,7 +20,7 @@ use Template::Provider;
 use Text::Abbrev;
 use Text::Wrap qw{ wrap };
 
-our $VERSION = '0.017_01';
+our $VERSION = '0.018';
 
 my %template_definitions = (
 
@@ -305,8 +305,8 @@ sub new {
 
     $self->_new_tt( $self->permissive() );
 
-    while ( my ( $name, $def ) = each %template_definitions ) {
-	$self->template( $name => $def );
+    foreach my $name ( keys %template_definitions ) {
+	$self->template( $name => $template_definitions{ $name } );
     }
 
     $self->{default} = {};

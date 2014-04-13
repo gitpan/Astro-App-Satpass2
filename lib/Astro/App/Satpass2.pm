@@ -49,7 +49,7 @@ BEGIN {
 	};
 }
 
-our $VERSION = '0.017_01';
+our $VERSION = '0.018';
 
 # The following 'cute' code is so that we do not determine whether we
 # actually have optional modules until we really need them, and yet do
@@ -2898,7 +2898,8 @@ sub _frame_push {
 	    my $frame = pop @{$self->{frame}}
 		or $self->weep( 'No frame to pop' );
 	    my $local = $frame->{local} || {};
-	    while (my ( $name, $value) = each %{ $local } ) {
+	    foreach my $name ( keys %{ $local } ) {
+		my $value = $local->{$name};
 		if ( exists $self->{$name} && !$force_set{$name} ) {
 		    $self->{$name} = $value;
 		} else {
@@ -2907,8 +2908,8 @@ sub _frame_push {
 	    }
 	    foreach my $key (qw{macro}) {
 		my $info = $frame->{$key} || {};
-		while (my ($name, $value) = each %$info) {
-		    $self->{$key}{$name} = $value;
+		foreach my $name ( keys %{ $info } ) {
+		    $self->{$key}{$name} = $info->{ $name };
 		}
 	    }
 	    ($frame->{spacetrack} && %{$frame->{spacetrack}})
