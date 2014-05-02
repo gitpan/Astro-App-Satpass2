@@ -49,7 +49,7 @@ BEGIN {
 	};
 }
 
-our $VERSION = '0.018';
+our $VERSION = '0.018_01';
 
 # The following 'cute' code is so that we do not determine whether we
 # actually have optional modules until we really need them, and yet do
@@ -199,6 +199,7 @@ my %mutator = (
     model => \&_set_model,
     max_mirror_angle => \&_set_angle,
     pass_threshold => \&_set_angle_or_undef,
+    pass_variant	=> \&_set_pass_variant,
     perltime => \&_set_time_parser_attribute,
     prompt => \&_set_unmodified,
     simbad_url => \&_set_unmodified,
@@ -251,6 +252,7 @@ my %shower = (
     geocoder	=> \&_show_copyable,
     gmt => \&_show_formatter_attribute,
     local_coord => \&_show_formatter_attribute,
+    pass_variant	=> \&_show_pass_variant,
     time_parser => \&_show_copyable,
     time_format => \&_show_formatter_attribute,
 );
@@ -300,6 +302,7 @@ my %static = (
 	Astro::Coord::ECI::TLE::Iridium->DEFAULT_MAX_MIRROR_ANGLE ),
     model => 'model',
 #   pending => undef,		# Continued input line if it exists.
+    pass_variant	=> PASS_VARIANT_NONE,
     perltime => 0,
     prompt => 'satpass2> ',
     simbad_url => 'simbad.u-strasbg.fr',
@@ -906,9 +909,10 @@ sub init {
 	    sub {
 		# A missing init file is only an error if it was
 		# specified explicitly.
-		-f $init_file
+		-e $init_file
+		    and not -d _
 		    or $self->wail(
-			"Initialization file $init_file not found"
+			"Initialization file $init_file not found, or is a directory"
 		    );
 		return ( $init_file, $opt->{level1} )
 	    },
@@ -1249,7 +1253,7 @@ sub magnitude_table : Verb( name! reload! ) {
 
 # Attributes must all be on one line to process correctly under Perl
 # 5.8.8.
-sub pass : Verb( choose=s@ appulse! chronological! dump! events! horizon|rise|set! illumination! quiet! transit|maximum|culmination! )
+sub pass : Verb( choose=s@ appulse! brightest|magnitude! chronological! dump! events! horizon|rise|set! illumination! quiet! transit|maximum|culmination! )
 {
     my ( $self, $opt, @args ) = __arguments( @_ );
 
@@ -1282,6 +1286,26 @@ sub pass : Verb( choose=s@ appulse! chronological! dump! events! horizon|rise|se
     my $appulse = deg2rad ($self->{appulse});
     my $pass_threshold = deg2rad( $self->{pass_threshold} );
 
+    # In order that the interface not be completely rude, the interface
+    # allows -brightest to specify that you want the 'brightest' event.
+    # But this is controlled by the pass_variant attribute. So if
+    # -brightest appears, the pass_variant from it; otherwise we default
+    # -brightest from the pass_variant attribute.  We localize the
+    # pass_variant attribute before modifying it, since the -brightest
+    # option is to hold for this call only. We modify it (rather than
+    # just passing a local copy to the bodies) because
+    # Formatter::Template needs to know what it is, and modifying this
+    # object is the obvious way to pass the information.
+    local $self->{pass_variant} = $self->{pass_variant};
+    if ( $opt->{brightest} ) {
+	$self->{pass_variant} |= PASS_VARIANT_BRIGHTEST;
+    } elsif ( exists $opt->{brightest} ) {
+	$self->{pass_variant} &= ~ PASS_VARIANT_BRIGHTEST;
+    } else {
+	$opt->{brightest} = $self->{pass_variant} & PASS_VARIANT_BRIGHTEST;
+    }
+    my $pass_variant = $self->{pass_variant};
+
 #	Foreach body to be modelled
 
     my @accumulate;	# For chronological output.
@@ -1300,6 +1324,7 @@ sub pass : Verb( choose=s@ appulse! chronological! dump! events! horizon|rise|se
 		interval => ( $self->{verbose} ? $pass_step : 0 ),
 		model => $mdl,
 		pass_threshold => $pass_threshold,
+		pass_variant	=> $pass_variant,
 		station	=> $sta,
 		twilight => $self->{_twilight},
 		visible => $self->{visible},
@@ -1340,6 +1365,9 @@ sub pass : Verb( choose=s@ appulse! chronological! dump! events! horizon|rise|se
     $selector[ PASS_EVENT_MAX ]		= 'transit';
     $selector[ PASS_EVENT_SET ]		= 'horizon';
     $selector[ PASS_EVENT_APPULSE ]	= 'appulse';
+    $selector[ PASS_EVENT_START ]	= 'horizon';
+    $selector[ PASS_EVENT_END ]		= 'horizon';
+    $selector[ PASS_EVENT_BRIGHTEST ]	= 'brightest';
 
     # Remove from the pass data any events that are not wanted. The
     # arguments are $self, the $opt hash reference that (among other
@@ -1385,7 +1413,7 @@ sub pass : Verb( choose=s@ appulse! chronological! dump! events! horizon|rise|se
 	    or return 1;
 	$event == PASS_EVENT_NONE
 	    and return 1;
-	return $opt->{ $selector[ $event ] };
+	return defined $selector[ $event ] && $opt->{ $selector[ $event ] };
     }
 }
 
@@ -1814,6 +1842,78 @@ sub _set_model {
     return ( $self->{$name} = $val );
 }
 
+{
+    my %variant_def = (
+	visible_events	=> PASS_VARIANT_VISIBLE_EVENTS,
+	fake_max	=> PASS_VARIANT_FAKE_MAX,
+	start_end	=> PASS_VARIANT_START_END,
+	no_illumination	=> PASS_VARIANT_NO_ILLUMINATION,
+	brightest	=> PASS_VARIANT_BRIGHTEST,
+    );
+
+    my @option_names;
+    foreach my $key ( keys %variant_def ) {
+	if ( $key =~ m/ _ /smx ) {
+	    ( my $dashed = $key ) =~ s/ _ /-/smxg;
+	    $key = "$key|$dashed";
+	}
+	push @option_names, "$key!";
+    }
+
+    my $go;
+
+    sub _set_pass_variant {
+	my ( $self, $name, $val ) = @_;
+	if ( $val =~ m/ \A (?: 0 x? ) [0-9]* \z /smx ) {
+	    $val = oct $val;
+	} elsif ( $val !~ m/ \A [0-9]+ \z /smx ) {
+	    my @args = split qr{ [^\w-] }smx, $val;
+	    foreach ( @args ) {
+		s/ \A (?! - ) /-/smx;
+	    }
+	    $go ||= Getopt::Long::Parser->new();
+	    $val = $self->get( $name );
+	    $go->getoptionsfromarray( \@args,
+		none	=> sub { $val = PASS_VARIANT_NONE },
+		map { $_ => sub {
+			my ( $name, $value ) = @_;
+			my $mask = $variant_def{$name};
+			if ( $value ) {
+			    $val |= $mask;
+			} else {
+			    $val &= ~ $mask;
+			}
+			return;
+		    }
+		} @option_names )
+		or $self->wail( "Invalid $name value '$val'" );
+	}
+	return ( $self->{$name} = $val );
+    }
+
+    sub _show_pass_variant {
+	my ( $self, $name ) = @_;
+	my $val = $self->get( $name );
+	my @options;
+	foreach my $key ( keys %variant_def ) {
+	    $val & $variant_def{$key}
+		and push @options, "$key";
+	}
+	@options
+	    or push @options, 'none';
+	return ( set => $name, join ',', @options );
+    }
+
+    sub want_pass_variant {
+	my ( $self, $variant ) = @_;
+	$variant_def{$variant}
+	    or $self->wail( "Invalid pass_variant name '$variant'" );
+	my $val = $self->get( 'pass_variant' ) & $variant_def{$variant};
+	return $val;
+    }
+
+}
+
 sub _set_spacetrack {
     my ($self, $name, $val) = @_;
     if (defined $val) {
@@ -1907,12 +2007,21 @@ sub show : Verb( changes! deprecated! readonly! ) {
     }
     my $output;
 
-    @args or @args = sort grep {
-	!$nointeractive{$_} &&
-	( $opt->{deprecated} ||
-	    !$self->_deprecation_in_progress( attribute => $_ ) &&
-       	( $opt->{readonly} || exists  $mutator{$_} ) )
-    } keys %accessor;
+    unless ( @args ) {
+	foreach my $name ( sort keys %accessor ) {
+	    $nointeractive{$name}
+		and next;
+	    exists $mutator{$name}
+		or $opt->{readonly}
+		or next;
+	    my $depr;
+	    ( $depr = $self->_deprecation_in_progress( attribute =>
+		    $name ) )
+		and ( not $opt->{deprecated} or $depr >= 3 )
+		and next;
+	    push @args, $name;
+	}
+    }
 
     foreach my $name (@args) {
 	exists $shower{$name}
@@ -2634,7 +2743,7 @@ sub _attribute_exists {
 #	$self->_deprecation_in_progress( $type, $name )
 #
 #	This method returns true if the deprecation is in progress. In
-#	practice this means the %deprecate value is defined.
+#	fact it returns the deprecation level.
 
 {
 
@@ -2645,7 +2754,7 @@ sub _attribute_exists {
 	    desired_equinox_dynamical	=> 0,
 	    explicit_macro_delete	=> 0,
 	    gmt		=> 0,
-	    lit		=> 2,
+	    lit		=> 3,
 	    local_coord	=> 0,
 	    perltime	=> 0,
 	    time_format	=> 0,
@@ -2679,7 +2788,7 @@ sub _attribute_exists {
     sub _deprecation_in_progress {
 	my ( $self, $type, $name ) = @_;
 	$deprecate{$type} or return;
-	return defined $deprecate{$type}{$name};
+	return $deprecate{$type}{$name};
     }
 
 }
@@ -2827,6 +2936,7 @@ sub _file_reader_SCALAR {
 sub __format_data {
     my ( $self, $action, $data, $opt ) = @_;
     return $self->_get_formatter_object( $opt )->format(
+	sp	=> $self,
 	template => $action,
 	data => $data
     );
@@ -5469,6 +5579,13 @@ C<-appulse> selects appulses for display. It can be negated by
 specifying C<-noappulse>, though a more efficient way to not get
 appulses is to clear the sky.
 
+C<-brightest> specifies (rather than selecting) that the moment the
+satellite is brightest should be calculated. If specified, this modifies
+the corresponding L<pass_variant|/pass_variant> bit for the duration of
+the call. If not specified, it defaults to the value of the
+corresponding C<pass_variant> bit. Formatters may display magnitude if
+the corresponding C<pass_variant> bit is set, but need not do so.
+
 C<-choose> chooses bodies from the observing list to report on. Multiple
 bodies can be chosen either by providing a comma-delimited list as an
 argument, specifying C<-choose> multiple times, or both. The choice is
@@ -5496,6 +5613,9 @@ C<-norise>, or C<-noset>.
 C<-illumination> selects passage of the satellite into or out of the
 Earth's shadow for display. This can be negated by specifying
 C<-noillumination>.
+
+C<-magnitude> is a synonym for C<-brightest>. See the documentation to
+that option (above) for more information.
 
 C<-quiet> suppresses any errors generated by running the orbital model.
 These are typically from obsolete data, and/or decayed satellites.
@@ -6103,6 +6223,15 @@ This non-interactive method is simply a wrapper for our
 C<Astro::App::Satpass2::Warner> object's C<wail()> method, which
 corresponds more or less to C<Carp::croak()>.
 
+=head2 want_pass_variant
+
+ $satpass2->want_pass_variant( 'brightest' );
+
+This convenience method returns a true value if the given pass variant
+is in effect, and false otherwise. The argument must be exactly one of the valid
+variant names documented for the L<pass_variant|/pass_variant>
+attribute, and must not be C<'none'>.
+
 =head2 weep
 
  $satpass2->weep( 'Something went very wrong' );
@@ -6466,9 +6595,9 @@ the Earth's shadow from the center of the illuminating body (typically
 the Sun) as seen from a body in space. The offset is in units of the
 apparent radius of the illuminating body, so that setting it to C<1>
 specifies the edge of the umbra, C<-1> specifies the edge of the
-penumbra, and C<0> specifies the middle of the penumbra. This parameter
+penumbra, and C<0> specifies the middle of the penumbra. This attribute
 corresponds to the same-named L<Astro::Coord::ECI|Astro::Coord::ECI>
-parameter.
+attribute.
 
 The default is 1 (i.e. edge of umbra).
 
@@ -6655,24 +6784,10 @@ There is no default; you must specify a value.
 
 =head2 lit
 
-This boolean attribute is deprecated. It is provided for backward
-compatibility with the F<satpass> script. The
-L<edge_of_earths_shadow|/edge_of_earths_shadow> attribute is preferred,
-and C<lit> is implemented in terms of that attribute. Note that any
-non-zero value of L<edge_of_earths_shadow|/edge_of_earths_shadow> will
-cause C<< $app->get( 'lit' ) >> to return true.
-
-Like the current C<satpass> script, every use of this attribute will
-result in a warning. In the first release on or after March 1 2013, this
-will become fatal.
-
-This boolean attribute specifies how to determine if a body is lit by
-the Sun. If true (i.e. 1) it is considered to be lit if the upper limb
-of the sun is above the horizon, as seen from the body. If false (i.e.
-0), the body is considered lit if the center of the sun is above the
-horizon.
-
-The default is 1 (i.e. true).
+This Boolean attribute is deprecated, and produces an exception on
+access. On the first release after October 1 2014 it will be removed
+completely. You should use the
+L<edge_of_earths_shadow|/edge_of_earths_shadow> attribute instead.
 
 =head2 local_coord
 
@@ -6748,6 +6863,51 @@ the valid values are the same as for that package. An attempt to set an
 invalid model will result in an exception.
 
 The default is 'model', which specifies whatever model is favored.
+
+=head2 pass_threshold
+
+This numeric attribute specifies the number of degrees of elevation
+above the horizon a pass has to reach before it is reported. If visible
+passes are desired, it must be visible above that elevation.  This
+attribute corresponds to the same-named
+L<Astro::Coord::ECI|Astro::Coord::ECI> attribute.
+
+=head2 pass_variant
+
+This attribute specifies the C<pass_variant> value to set when doing a
+C<pass()> computation. It can be set to a number or a string consisting
+of one or more of the following strings, which are equivalent to the
+given C<Astro::Coord::ECI::TLE> manifest constants:
+
+    visible_events   => PASS_VARIANT_VISIBLE_EVENTS
+    fake_max         => PASS_VARIANT_FAKE_MAX
+    start_end        => PASS_VARIANT_START_END
+    no_illumination  => PASS_VARIANT_NO_ILLUMINATION
+    brightest        => PASS_VARIANT_BRIGHTEST
+    none             => PASS_VARIANT_NONE
+
+If more than one value from the above table is specified, they can be
+punctuated by any character that is not a word or a dash. They can also
+be abbreviated uniquely, the underscores can be specified as dashes, and
+they can be preceded by a dash, as though they were options.
+
+When you specify a string value, the derived bits will be set in the
+attribute value, or cleared if the name is preceded by C<'no'>. The
+exception is C<'none'>, which clears all variant bits when it is
+encountered.
+
+For example,
+
+ satpass2> # Note quotes in next line
+ satpass2> set pass_variant 'none brightest fake-max'
+ satpass2> show pass_variant
+ set pass_variant brightest,fake_max
+ satpass2> set pass_variant nofake
+ satpass2> show pass_variant
+ set pass_variant brightest
+ satpass2> set pass_variant nobrightest
+ satpass2> show pass_variant
+ set pass_variant none
 
 =head2 perltime
 
