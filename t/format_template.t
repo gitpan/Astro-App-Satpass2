@@ -45,7 +45,31 @@ $sat->rebless( 'iridium' );
 
 my $ft = Astro::App::Satpass2::Format::Template->new()->gmt( 1 );
 
+# Encapsulation violation. The _uniq() subroutine may be moved or
+# retracted without notice of any kind.
+
+is_deeply
+    [ Astro::App::Satpass2::Format::Template::_uniq(
+	    qw{ Able was I ere I saw Elba } ) ],
+    [ qw{ Able was I ere saw Elba } ],
+    'Check our implementation of uniq()';
+
 ok $ft, 'Instantiate Astro::App::Satpass2::Format::Template';
+
+ok $ft->template( fubar => <<'EOD' ), 'Can set custom template';
+Able was [% arg.0 %] ere [% arg.0 %] saw Elba
+EOD
+
+is $ft->template( 'fubar' ), <<'EOD', 'Can get same template back';
+Able was [% arg.0 %] ere [% arg.0 %] saw Elba
+EOD
+
+is $ft->format(
+    template	=> 'fubar',
+    arg		=> [ 'I' ],
+), <<'EOD', 'Can use custom template';
+Able was I ere I saw Elba
+EOD
 
 is $ft->format(
     template	=> 'almanac',
@@ -444,6 +468,31 @@ OID: 88888
     Perigee: 198.3 kilometers
     Apogee: 313.4 kilometers
 EOD
+
+eval {
+    my $magic_word = 'Plugh';
+    $ft->add_formatter_method( {
+	    default	=> {
+		width	=> 6,
+	    },
+	    dimension	=> {
+		dimension	=> 'string_pseudo_units',
+	    },
+	    fetch	=> sub {
+		my ( $self, $name, $arg ) = @_;
+		return qq["$self->{data}{magic_word}"];
+	    },
+	    name	=> 'magic_word',
+	} );
+    $ft->template( advent => q<A hollow voice says [% data.magic_word( width = '' ) %]> );
+    is $ft->format(
+	template	=> 'advent',
+	data		=> {
+	    magic_word	=> $magic_word,
+	}
+    ), qq{A hollow voice says "$magic_word"}, 'Add a formatter';
+    1;
+} or fail "Added formatter failed: $@";
 
 done_testing;
 

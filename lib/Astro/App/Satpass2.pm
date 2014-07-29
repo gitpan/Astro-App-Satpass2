@@ -5,6 +5,8 @@ use 5.008;
 use strict;
 use warnings;
 
+
+use Astro::App::Satpass2::Locale qw{ __localize };
 use Astro::App::Satpass2::Macro::Command;
 use Astro::App::Satpass2::Macro::Code;
 use Astro::App::Satpass2::ParseTime;
@@ -49,7 +51,7 @@ BEGIN {
 	};
 }
 
-our $VERSION = '0.020';
+our $VERSION = '0.020_01';
 
 # The following 'cute' code is so that we do not determine whether we
 # actually have optional modules until we really need them, and yet do
@@ -350,6 +352,17 @@ sub new {
     return $self;
 }
 
+sub add {
+    my ( $self, @bodies ) = @_;
+    foreach my $body ( @bodies ) {
+	embodies( $body, 'Astro::Coord::ECI::TLE' )
+	    or $self->wail(
+	    'Arguments must represent Astro::Coord::ECI::TLE objects' );
+    }
+    push @{ $self->{bodies} }, @bodies;
+    return $self;
+}
+
 sub alias : Verb() {
     my ( $self, $opt, @args ) = __arguments( @_ );
 
@@ -378,7 +391,7 @@ sub almanac : Verb( choose=s@ dump! horizon|rise|set! transit! twilight! quarter
     my $almanac_end = $self->__parse_time (shift @args || '+1');
 
     $almanac_start >= $almanac_end
-	and $self->wail("End time must be after start time");
+	and $self->wail( 'End time must be after start time' );
 
 #	Build an object representing our ground location.
 
@@ -405,6 +418,17 @@ sub almanac : Verb( choose=s@ dump! horizon|rise|set! transit! twilight! quarter
 	);
 	push @almanac, $body->almanac_hash(
 	    $almanac_start, $almanac_end);
+    }
+
+    # Localize the event descriptions if appropriate.
+
+    foreach my $event ( @almanac ) {
+	$event->{almanac}{description} = __localize( almanac =>
+	    $event->{body}->get( 'name' ),
+	    $event->{almanac}{event},
+	    $event->{almanac}{detail},
+	    $event->{almanac}{description}
+	);
     }
 
 #	Sort the almanac data by date, and display the results.
@@ -525,7 +549,7 @@ sub end : Verb() {
     my ( $self, $opt, @args ) = __arguments( @_ );
 
     $self->{frame}[-1]{type} eq 'begin'
-	or $self->wail("End without begin");
+	or $self->wail( 'End without begin' );
     $self->_frame_pop();
     return;
 }
@@ -664,7 +688,7 @@ sub export : Verb() {
 	@args and $self->set ($name, shift @args);
 	$self->{exported}{$name} = 1;
     } else {
-	@args or $self->wail("You must specify a value");
+	@args or $self->wail( 'You must specify a value' );
 	$self->{exported}{$name} = shift @args;
     }
     return;
@@ -679,7 +703,7 @@ sub flare : Verb( algorithm=s am! choose=s@ day! dump! pm! questionable|spare! q
 	shift @args, $self->_get_today_noon());
     my $pass_end = $self->__parse_time (shift @args || '+7');
     $pass_start >= $pass_end
-	and $self->wail("End time must be after start time");
+	and $self->wail( 'End time must be after start time' );
     my $sta = $self->station();
 
     my $max_mirror_angle = deg2rad( $self->{max_mirror_angle} );
@@ -704,7 +728,7 @@ sub flare : Verb( algorithm=s am! choose=s@ day! dump! pm! questionable|spare! q
 	    scalar $self->__choose( $opt->{choose}, $self->{bodies} )
 	) )
     {
-	$tle->can_flare ($opt->{questionable}) or next;
+	$tle->can_flare( $opt->{questionable} ) or next;
 	$tle->set (
 	    algorithm	=> $opt->{algorithm} || 'fixed',
 	    backdate	=> $self->{backdate},
@@ -722,7 +746,7 @@ sub flare : Verb( algorithm=s am! choose=s@ day! dump! pm! questionable|spare! q
 	);
 	push @active, $tle;
     }
-    @active or $self->wail("No bodies capable of flaring");
+    @active or $self->wail( 'No bodies capable of flaring' );
 
     my @flares;
     foreach my $tle (@active) {
@@ -786,7 +810,7 @@ sub geocode : Verb( debug! ) {
 
 sub geodetic : Verb() {
     my ( $self, $opt, $name, $lat, $lon, $alt ) = __arguments( @_ );
-    @_ == 5 or $self->wail( "Want exactly four arguments" );
+    @_ == 5 or $self->wail( 'Want exactly four arguments' );
     my $body = Astro::Coord::ECI::TLE->new(
 	name => $name,
 	id => '',
@@ -975,6 +999,9 @@ sub _init_file_01 {
 sub list : Verb( choose=s@ ) {
     my ( $self, $opt, @args ) = __arguments( @_ );
 
+    @args
+	and not $opt->{choose}
+	and $opt->{choose} = \@args;
     my @bodies = $self->__choose( $opt->{choose}, $self->{bodies} );
 
     @bodies
@@ -982,7 +1009,7 @@ sub list : Verb( choose=s@ ) {
 	    list => \@bodies, $opt );
 
     $self->{warn_on_empty}
-	and $self->whinge("The observing list is empty");
+	and $self->whinge( 'The observing list is empty' );
 
     return;
 }
@@ -1263,11 +1290,11 @@ sub pass : Verb( choose=s@ appulse! brightest|magnitude! chronological! dump! ev
 	shift @args, $self->_get_today_noon());
     my $pass_end = $self->__parse_time (shift @args || '+7');
     $pass_start >= $pass_end
-	and $self->wail("End time must be after start time");
+	and $self->wail( 'End time must be after start time' );
 
     my $sta = $self->station();
     my @bodies = $self->__choose( $opt->{choose}, $self->{bodies} )
-	or $self->wail("No bodies selected");
+	or $self->wail( 'No bodies selected' );
     my $pass_step = shift @args || 60;
 
 #	Decide which model to use.
@@ -1417,6 +1444,27 @@ sub pass : Verb( choose=s@ appulse! brightest|magnitude! chronological! dump! ev
     }
 }
 
+sub perl : Verb( eval! ) {
+    my ( $self, $opt, $file, @args ) = __arguments( @_ );
+    defined $file
+	or $self->wail( 'At least one argument is required' );
+    local @ARGV = ( $self, @args );
+    if ( $opt->{eval} ) {
+	my $rslt = eval $file;	## no critic (BuiltinFunctions::ProhibitStringyEval)
+	$@
+	    and $self->wail( "Failed to eval '$file': $@" );
+	return $rslt;
+    }
+    my $path = $self->expand_tilde( $file );
+    local $0 = $path;
+    my $rslt = do $path;
+    $@ and $self->wail( "Failed to run $path: $@" );
+    $! and $self->wail( "Failed to run $path: $!" );
+    instance( $rslt, 'Astro::App::Satpass2' )
+	or return $rslt;
+    return;
+}
+
 sub phase : Verb( choose=s@ ) {
     my ( $self, $opt, @args ) = __arguments( @_ );
 
@@ -1526,6 +1574,17 @@ sub pwd : Verb() {
 	    }
 	}
 
+	# Localize the event descriptions if appropriate.
+
+	foreach my $event ( @almanac ) {
+	    $event->{almanac}{description} = __localize( almanac =>
+		$event->{body}->get( 'name' ),
+		$event->{almanac}{event},
+		$event->{almanac}{detail},
+		$event->{almanac}{description}
+	    );
+	}
+
 	# Sort and display the quarter-phase information.
 
 	return $self->__format_data(
@@ -1546,6 +1605,11 @@ sub pwd : Verb() {
 	# We can be called statically. If we are, instantiate.
 	ref $self or $self = $self->new(warning => 1);
 
+	# Put all the I/O into UTF-8 mode.
+	binmode STDIN, ':encoding(UTF-8)';
+	binmode STDOUT, ':encoding(UTF-8)';
+	binmode STDERR, ':encoding(UTF-8)';
+
 	# If the undocumented first option is a code reference, use it to
 	# get input.
 	my $in;
@@ -1562,7 +1626,7 @@ sub pwd : Verb() {
 		level1! version
 	    },
 	)
-	    or $self->wail( "See the help method for valid options" );
+	    or $self->wail( 'See the help method for valid options' );
 
 	# If -version, do it and return.
 	if ( $opt{version} ) {
@@ -1966,7 +2030,7 @@ sub _set_twilight {
     } else {
 	my $angle = $self->__parse_angle( { accept => 1 }, $val );
 	looks_like_number( $angle )
-	    or $self->wail("Twilight must be number or known keyword" );
+	    or $self->wail( 'Twilight must be number or known keyword' );
 	$self->{$name} = $val;
 	$self->{_twilight} = deg2rad ($angle);
     }
@@ -2099,20 +2163,20 @@ use constant SPY2DPS => 3600 * 365.24219 * SECSPERDAY;
 			quoter ($body->get ('name')), _rad2hms ($ra),
 			rad2deg ($dec), $rng, $pmra, $pmdec, $vr);
 		} else {
-		    $output .= "sky add " . quoter (
+		    $output .= 'sky add ' . quoter (
 			$body->get ('name')) . "\n";
 		}
 	    }
 	    unless (@{$self->{sky}}) {
 		$self->{warn_on_empty}
-		    and $self->whinge("The sky is empty");
+		    and $self->whinge( 'The sky is empty' );
 	    }
 	    return $output;
 	},
 	add	=> sub {
 	    my ( $self, @args ) = @_;
 	    my $name = shift @args
-		or $self->wail("You did not specify what to add");
+		or $self->wail( 'You did not specify what to add' );
 	    my $fcn = fold_case( $name );
 	    if ( my $class = $planet_class{$fcn} ) {
 		foreach my $body ( @{ $self->{sky} } ) {
@@ -2160,7 +2224,7 @@ use constant SPY2DPS => 3600 * 365.24219 * SECSPERDAY;
 	drop	=> sub {
 	    my ( $self, @args ) = @_;
 	    @args or $self->wail(
-		"You must specify at least one name to drop");
+		'You must specify at least one name to drop' );
 	    my $match = qr< @{[ join '|', map {quotemeta $_} @args ]} >smxi;
 	    @{$self->{sky}} = grep {
 		$_->get ('name') !~ m/ $match /smx } @{$self->{sky}};
@@ -2194,7 +2258,7 @@ use constant SPY2DPS => 3600 * 365.24219 * SECSPERDAY;
 	    my ($ra, $dec, $rng, $pmra, $pmdec, $pmrec) =
 		$self->_simbad4 ($name);
 	    $rng = sprintf '%.2f', $rng;
-	    $output .= "sky add " . quoter ($name) .
+	    $output .= 'sky add ' . quoter ($name) .
 		" $ra $dec $rng $pmra $pmdec $pmrec\n";
 	    $ra = deg2rad ($self->__parse_angle ($ra));
 	    my $body = Astro::Coord::ECI::Star->new (name => $name);
@@ -2520,13 +2584,35 @@ sub time_parser : Verb() {
     goto &_helper_handler;
 }
 
-sub tle : Verb( verbose! ) {
+sub tle : Verb( :compute ) {
     my ( $self, $opt, @args ) = __arguments( @_ );
+    @args
+	and not $opt->{choose}
+	and $opt->{choose} = \@args;
 
-    my $bodies = $self->__choose( \@args, $self->{bodies} );
-    my $method = $opt->{verbose} ? 'tle_verbose' : 'tle';
-    return $self->__format_data(
-	$method => $bodies, $opt );
+    my $bodies = $self->__choose( $opt->{choose}, $self->{bodies} );
+    my $tplt_name = delete $opt->{_template};
+    return $self->__format_data( $tplt_name => $bodies, $opt );
+}
+
+sub _tle_options {
+    my ( $self, $opt ) = @_;
+    my @lgl = qw{ choose=s@ };
+    $opt->{_template} = 'tle';
+    my $code = sub {
+	my ( $name, $value ) = @_;
+	$opt->{_template} = $value ? "tle_$name" : 'tle';
+	return;
+    };
+    my $fmtr = $self->get( 'formatter' );
+    if ( $fmtr->can( '__list_templates' ) ) {
+	foreach ( $fmtr->__list_templates() ) {
+	    m/ \A tle_ ( \w+ ) \z /smx
+		or next;
+	    push @lgl, "$1!", $code;
+	}
+    }
+    return \@lgl;
 }
 
 
@@ -2547,10 +2633,10 @@ sub validate : Verb( quiet! ) {
 	shift @args, $self->_get_today_noon());
     my $pass_end = $self->__parse_time (shift @args || '+7');
     $pass_start >= $pass_end
-	and $self->wail("End time must be after start time");
+	and $self->wail( 'End time must be after start time' );
 
     @{ $self->{bodies} }
-	or $self->wail("No bodies selected");
+	or $self->wail( 'No bodies selected' );
 
 #	Validate each body.
 
@@ -2662,8 +2748,8 @@ sub _attribute_exists {
 			return $context->{id} == $s;
 		    };
 		}
-		return @rslt;
 	    }
+	    return @rslt;
 	},
 	CODE	=> sub {
 	    my ( $sel ) = @_;
@@ -3026,7 +3112,7 @@ sub _frame_push {
 		and $self->_get_spacetrack()->set(%{$frame->{spacetrack}});
 	}
 	if (delete $self->{pending}) {
-	    $self->wail("Input ended on continued line");
+	    $self->wail('Input ended on continued line');
 	}
 	return;
     }
@@ -3173,7 +3259,7 @@ sub _get_interactive {
 		eval {
 		    load_package( 'Term::ReadLine' )
 			or return;
-		    $rl ||= Term::ReadLine->new("satpass2");
+		    $rl ||= Term::ReadLine->new('satpass2');
 		    sub {
 			defined $buffer or return $buffer;
 			return ( $buffer = $rl->readline($_[0]) );
@@ -4172,7 +4258,7 @@ sub _unescape {
 			$name .= $char;
 		    }
 		    $char eq '}'
-			or $self->wail("Missing right curly bracket");
+			or $self->wail('Missing right curly bracket');
 		
 		# If the name begins with an alpha or an underscore, we
 		# simply append any word ('\w') characters to it and
@@ -4253,11 +4339,11 @@ sub _unescape {
 			    }
 			    @pos > 2
 				and $self->wail(
-				"Substring expansion has extra arguments" );
+				'Substring expansion has extra arguments' );
 			    foreach ( @pos ) {
 				m/ \A [-+]? \d+ \z /smx
 				    or $self->wail(
-				    "Substring expansion argument non-numeric"
+				    'Substring expansion argument non-numeric'
 				);
 			    }
 			    if (ref $value) {
@@ -4421,14 +4507,14 @@ sub _unescape {
 		    my $terminator = $rslt[-1]{token};
 		    my $look_for = $terminator . "\n";
 		    $rslt[-1]{token} = '';
-		    $rslt[-1]{expand} = $quote ne "'";
+		    $rslt[-1]{expand} = $quote ne q<'>;
 		    while ( 1 ) {
 			my $buffer = $self->_read_continuation( $in,
 			    "Here doc terminator $terminator not found" );
 			$buffer eq $look_for and last;
 			$rslt[-1]{token} .= $buffer;
 		    }
-		    if ( $quote ne "'" ) {
+		    if ( $quote ne q<'> ) {
 			$rslt[-1]{token} = _tokenize(
 			    $self,
 			    { single => 1, noredirect => 1, in => $in },
@@ -4868,6 +4954,16 @@ returns C<undef> in scalar context, and an empty list in list context.
 
 This non-interactive method instantiates a new Astro::Satpass2 object.
 Any arguments are passed to the L<set()|/set> method.
+
+=head2 add
+
+ $satpass2->add( @bodies );
+
+This non-interactive method adds its arguments to the observing list.
+An exception is raised if any argument does not represent an
+L<Astro::Coord::ECI::TLE|Astro::Coord::ECI::TLE> object.
+
+The invocant is returned.
 
 =head2 alias
 
@@ -5411,6 +5507,21 @@ but the observing list is unaffected. To choose multiple bodies, either
 specify the option multiple times, separate the choices with commas, or
 both.
 
+If the C<-choose> option is not present but arguments are given, they
+are made into a C<-choose> specification. Thus,
+
+ satpass2> list hst
+
+is equivalent to
+
+ satpass2> list -choose hst
+
+but
+
+ satpass2> list -choose hst iss
+
+will only list C<'hst'>.
+
 =head2 load
 
  $satpass2->load( $filename, ... );
@@ -5638,6 +5749,21 @@ if the command is issued from a F<satpass> initialization file (as
 opposed to an C<Astro::App::Satpass2> initialization file, or from a macro
 defined in a F<satpass> initialization file. This functionality will be
 revoked when support for the F<satpass> script is dropped.
+
+=head2 perl
+
+ $output = $satpass2->perl( $perl_file );
+ satpass2> perl perl_file
+
+This interactive method runs the given Perl file using the C<do>
+built-in. The file is entered with C<$ARGV[0]> set to a reference to the
+invocant, and subsequent C<@ARGV> entries set to the arguments, if any.
+The return is the result of the last statement in the file unless the
+file returns an instance of C<Astro::App::Satpass2>, in which case
+nothing is returned.
+
+If you provide the option C<-eval>, the argument is passed to the
+C<eval> built-in instead.
 
 =head2 phase
 
@@ -6173,9 +6299,29 @@ list. If any arguments are passed, they select the items to be
 displayed, in the same way that L</choose> does, though in this case the
 contents of the observing list are unaffected.
 
-The following option is allowed:
+The following options are allowed:
 
+ -choose explicitly chooses the bodies to display. The
+     contents of the observing list are unaffected, and
+     arguments are ignored.
  -verbose produces an expanded list, with data labeled.
+
+Actually, the presence of any template whose name begins with C<'tle_'>
+causes the trailing part of the name to be valid as an option selecting
+that template. For example, loading F<eg/tle_json.tt> as template
+C<'tle_json'> makes C<-json> a valid option that uses template
+C<'tle_json'> to format the TLE.
+
+The template selector options can be negated by prefixing C<'no'> to the
+option name (e.g. C<-noverbose>). Negating the option specifies template
+C<'tle'>, the default.
+
+If more than one template selector option is specified, the rightmost
+one riles. For example, given template C<'tle_json'>,
+
+ satpass2> tle -verbose -json
+
+uses template C<'tle_json'> to display the output.
 
 =head2 unexport
 

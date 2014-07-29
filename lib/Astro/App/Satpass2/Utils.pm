@@ -7,33 +7,25 @@ use warnings;
 
 use base qw{ Exporter };
 
-use Astro::Coord::ECI::Utils ();
 use Cwd ();
 use File::HomeDir;
 use File::Spec;
 use Getopt::Long 2.33;
 use Scalar::Util 1.26 qw{ blessed looks_like_number };
 
-our $VERSION = '0.020';
+our $VERSION = '0.020_01';
 
 our @EXPORT_OK = qw{
-    __arguments expand_tilde fold_case
+    __arguments expand_tilde
     has_method instance load_package merge_hashes my_dist_config quoter
     __date_manip_backend
 };
-
-BEGIN {
-    *fold_case = Astro::Coord::ECI::Utils->can( 'fold_case' ) ||
-	CORE->can( 'fc' ) ||		# Perl 5.16 amd up
-	sub ($) { return lc $_[0] };
-}
 
 # Documented in POD
 
 {
 
     my @default_config = qw{default pass_through};
-####    my @default_config = qw{default};
 
     sub __arguments {
 	my ( $self, @args ) = @_;
@@ -52,9 +44,16 @@ BEGIN {
 	my $code = \&{$data[3]};
 
 	local @ARGV = @args;
+	my ( $err, %opt );
 	my $lgl = $self->_get_attr($code, 'Verb') || [];
-	my %opt;
-	my $err;
+	if ( @{ $lgl } && ':compute' eq $lgl->[0] ) {
+	    my $method = $lgl->[1];
+	    unless ( defined $method ) {
+		( $method = $data[3] ) =~ s/ .* :: //smx;
+		$method = "_${method}_options";
+	    }
+	    $lgl = $self->$method( \%opt, $lgl );
+	}
 	local $SIG{__WARN__} = sub {$err = $_[0]};
 	my $config = 
 	    $self->_get_attr($code, 'Configure') || \@default_config;
@@ -87,7 +86,8 @@ sub __date_manip_backend {
 }
 
 sub expand_tilde {
-    my ( $self, $fn ) = @_;
+    my @args = @_;
+    my ( $self, $fn ) = @args > 1 ? @args : ( undef, @args );
     defined $fn
 	and $fn =~ s{ \A ~ ( [^/]* ) }{ _user_home_dir( $self, $1 ) }smxe;
     return $fn;
@@ -96,7 +96,9 @@ sub expand_tilde {
 {
     my %special = (
 	'+'	=> sub { return Cwd::cwd() },
-	'~'	=> sub { return my_dist_config() },
+	'~'	=> sub {
+	    return my_dist_config();
+	},
 	''	=> sub { return File::HomeDir->my_home() },
     );
 #	$dir = $self->_user_home_dir( $user );
@@ -112,14 +114,22 @@ sub expand_tilde {
 
 	if ( my $code = $special{$user} ) {
 	    defined( my $special_dir = $code->( $user ) )
-		or $self->wail( "Unable to find ~$user" );
+		or _wail( $self, "Unable to find ~$user" );
 	    return $special_dir;
 	} else {
 	    defined( my $home_dir = File::HomeDir->users_home( $user ) )
-		or $self->wail( "Unable to find home for $user" );
+		or _wail( $self, "Unable to find home for $user" );
 	    return $home_dir;
 	}
     }
+}
+
+sub _wail {
+    my ( $invocant, @msg ) = @_;
+    ref $invocant
+	and $invocant->wail( @msg );
+    require Carp;
+    Carp::croak( @msg );
 }
 
 sub has_method {
@@ -242,6 +252,9 @@ sub merge_hashes {	## no critic (RequireArgUnpacking)
 sub my_dist_config {
     my ( $opt ) = @_;
 
+    defined $ENV{ASTRO_APP_SATPASS2_CONFIG_DIR}
+	and return $ENV{ASTRO_APP_SATPASS2_CONFIG_DIR};
+
     return File::HomeDir->my_dist_config(
 	'Astro-App-Satpass2',
 	{ create => $opt->{'create-directory'} },
@@ -259,7 +272,7 @@ sub _quoter {
     my ( $string ) = @_;
     return 'undef' unless defined $string;
     return $string if looks_like_number ($string);
-    return "''" unless $string;
+    return q{''} unless $string;
     return $string unless $string =~ m/ [\s'"\$] /smx;
     $string =~ s/ ( [\\'] ) /\\$1/smxg;
     return qq{'$string'};
@@ -310,27 +323,6 @@ exception if the configuration directory does not exist.
 
 All that is required of the invocant is that it support the package's
 suite of error-reporting methods C<whinge()>, C<wail()>, and C<weep()>.
-
-=head2 fold_case
-
- my $folded = fold_case( $text );
-
-THIS SUBROUTINE IS DEPRECATED IN FAVOR OF THE SAME-NAMED SUBROUTINE IN
-L<Astro::Coord::ECI::Utils|Astro::Coord::ECI::Utils>. Because this
-module is documented as being B<private> to the C<Astro::App::Satpass2>
-package, I feel justified in using an accelerated deprecation schedule,
-and removing it completely the first release after June 30 2014. In the
-meantime it is equated to C<Astro::Coord::ECI::Utils::fold_case()>
-provided the latter exists.
-
-This subroutine performs best-effort case folding of data for case-blind
-operations. Under Perl 5.16 or higher, it is an alias for the C<fc()>
-built-in. Otherwise it is an alias for the C<lc()> built-in if that can
-be aliased. As a last resort under older Perls, it is a subroutine that
-calls C<lc()> on its argument. The exact output should not be relied on,
-and in particular the author may make unannounced twiddles to the
-pre-5.16 case if a strong case for something more sophisticated than a
-simple C<lc()> manifests itself.
 
 =head2 has_method
 
@@ -427,7 +419,9 @@ right-most argument is the one returned.
 
  my $cfg_dir = my_dist_config( { 'create-directory' => 1 } );
 
-This subroutine simply wraps
+This subroutine returns a path to the user's configuration directory. If
+environment variable C<ASTRO_APP_SATPASS2_CONFIG_DIR> is defined, that
+is returned regardless of any arguments. Otherwise it simply wraps
 
  File::HomeDir->my_dist_config( 'Astro-App-Satpass2' );
 

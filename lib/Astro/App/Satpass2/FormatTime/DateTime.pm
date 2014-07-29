@@ -10,10 +10,11 @@ use base qw{
 };
 
 use Astro::App::Satpass2::Utils qw{ instance };
+use Astro::App::Satpass2::Locale qw{ __preferred };
 use DateTime;
 use DateTime::TimeZone;
 
-our $VERSION = '0.020';
+our $VERSION = '0.020_01';
 
 sub format_datetime {
     my ( $self, $tplt, $time, $gmt ) = @_;
@@ -25,7 +26,9 @@ sub format_datetime {
 	my $dt = DateTime->from_epoch(
 	    epoch	=> $time,
 	    time_zone	=> $self->_get_zone( defined $gmt ? $gmt :
-		$self->gmt() ) );
+		$self->gmt() ),
+	    locale	=> scalar __preferred(),
+	);
 	return $self->__format_datetime( $dt, $tplt );
     }
 }

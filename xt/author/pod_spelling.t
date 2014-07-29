@@ -103,6 +103,8 @@ JSON
 jul
 julian
 kluged
+localization
+localizations
 lookup
 Lookup
 lookups
@@ -199,6 +201,7 @@ warner
 webcmd
 WGS
 whinge
+wooly
 Wyant
 YAML
 zoneinfo

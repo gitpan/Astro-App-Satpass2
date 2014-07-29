@@ -7,6 +7,8 @@ use lib qw{ inc };
 
 use Test::More 0.88;
 use Astro::App::Satpass2::Test::App;
+use Astro::Coord::ECI::TLE;
+use Astro::Coord::ECI::Utils qw{ deg2rad };
 use Cwd qw{ cwd };
 use File::HomeDir;
 use Scalar::Util 1.26 qw{ blessed };
@@ -91,7 +93,7 @@ SKIP: {
     }
     chomp $got;
 
-    is $got, "Madam, I'm Adam", 'Redirect made it to file';
+    is $got, q{Madam, I'm Adam}, 'Redirect made it to file';
 }
 
 {
@@ -160,7 +162,7 @@ execute ' ', undef, 'Blank lines are ignored';
 }
 
 execute 'set stdout STDOUT',
-    "Attribute 'stdout' may not be set interactively",
+    q{Attribute 'stdout' may not be set interactively},
     'Can not set stdout interactively';
 
 execute 'foo \'bar', 'Unclosed single quote',
@@ -232,8 +234,8 @@ Location:
           Latitude 51.4772, longitude 0.0000, height 2 m
 EOD
 
-execute "set location 'Royal Observatory, Greenwich England'",
-    undef, "Set our location's name";
+execute q{set location 'Royal Observatory, Greenwich England'},
+    undef, q{Set our location's name};
 
 execute 'show location',
     q<set location 'Royal Observatory, Greenwich England'>,
@@ -268,7 +270,7 @@ execute 'show time_format',
     'formatter time_format %H:%M:%S',
     'Show time format';
 
-execute "almanac '20090401T000000Z'",
+execute q{almanac '20090401T000000Z'},
     <<'EOD', 'Almanac for April Fools 2009';
 2009/04/01 00:04:00 local midnight
 2009/04/01 01:17:47 Moon set
@@ -281,7 +283,7 @@ execute "almanac '20090401T000000Z'",
 2009/04/01 19:07:26 end twilight
 EOD
 
-execute "almanac -notransit '20090401T000000Z'",
+execute q{almanac -notransit '20090401T000000Z'},
     <<'EOD', 'Almanac for April Fools 2009';
 2009/04/01 01:17:47 Moon set
 2009/04/01 05:01:29 begin twilight
@@ -291,7 +293,7 @@ execute "almanac -notransit '20090401T000000Z'",
 2009/04/01 19:07:26 end twilight
 EOD
 
-execute "almanac -rise -transit '20090401T000000Z'",
+execute q{almanac -rise -transit '20090401T000000Z'},
     <<'EOD', 'Almanac for April Fools 2009';
 2009/04/01 00:04:00 local midnight
 2009/04/01 01:17:47 Moon set
@@ -458,7 +460,7 @@ EOD
 
 execute 'macro brief', undef, 'Brief macro listing, without macros';
 
-execute 'macro define place location', undef, "Define 'place' macro";
+execute 'macro define place location', undef, q{Define 'place' macro};
 
 execute 'macro brief', 'place', 'Brief macro listing, with a macro';
 
@@ -770,7 +772,7 @@ EOD
 
 # TODO pass -events
 
-execute "phase '20090401T000000Z'", <<'EOD', 'Phase of moon April 1 2009';
+execute q{phase '20090401T000000Z'}, <<'EOD', 'Phase of moon April 1 2009';
       Date     Time     Name Phas Phase             Lit
 2009/04/01 00:00:00     Moon   69 waxing crescent    32%
 EOD
@@ -785,7 +787,7 @@ EOD
     
     execute 'choose 88888', undef, 'Restrict ourselves to body 88888';
     
-execute "position '20090401T000000Z'", <<'EOD',
+execute q{position '20090401T000000Z'}, <<'EOD',
 2009/04/01 00:00:00
             Name Eleva  Azimuth      Range               Epoch Illum
              Sun -34.0 358.8 N   1.495e+08
@@ -800,7 +802,7 @@ EOD
     execute 'set local_coord equatorial_rng', undef,
 	'Set local_coord to \'equatorial_rng\'';
 
-    execute "position '20090401T000000Z'", <<'EOD',
+    execute q{position '20090401T000000Z'}, <<'EOD',
 2009/04/01 00:00:00
                     Right
             Name Ascensio Decli      Range               Epoch Illum
@@ -811,7 +813,7 @@ EOD
 
     execute 'set local_coord', undef, 'Clear local_coord';
 
-    execute "position '20090401T000000Z'", <<'EOD',
+    execute q{position '20090401T000000Z'}, <<'EOD',
 2009/04/01 00:00:00
             Name Eleva  Azimuth      Range               Epoch Illum
              Sun -34.0 358.8 N   1.495e+08
@@ -823,7 +825,7 @@ EOD
 
 execute 'pwd', cwd() . "\n", 'Print working directory';
 
-execute "quarters '20090301T000000Z'", <<'EOD',
+execute q{quarters '20090301T000000Z'}, <<'EOD',
 2009/03/04 07:45:18 First quarter Moon
 2009/03/11 02:37:41 Full Moon
 2009/03/18 17:47:34 Last quarter Moon
@@ -832,7 +834,7 @@ execute "quarters '20090301T000000Z'", <<'EOD',
 EOD
     'Quarters of Moon and Sun, Mar 1 2009';
 
-execute 'sky list', <<'EOD', "List what's in the sky";
+execute 'sky list', <<'EOD', 'List what is in the sky';
 sky add Moon
 sky add Sun
 EOD
@@ -930,6 +932,8 @@ execute  'formatter format position 19801013T054326Z', <<'EOD',
 EOD
     'Position run from template';
 
+my $dist_dir = cwd();
+
 SKIP: {
 
     my $tests = 2;
@@ -939,7 +943,7 @@ SKIP: {
 	1;
     } or skip 'File::Spec not available', $tests;
 
-    -d 't' or skip "No t directory found", $tests;
+    -d 't' or skip 'No t directory found', $tests;
     my $t = File::Spec->catfile( cwd(), 't');
 
     execute 'cd t', undef, 'Change to t directory';
@@ -965,6 +969,9 @@ SKIP: {
     same_path $got_home, $home,
 	"Change to home directory succeeded. \$^O = '$^O'";
 }
+
+chdir $dist_dir
+    or BAIL_OUT "Can not get back to directory '$dist_dir': $!";
 
 TODO: {
     SKIP: {
@@ -1000,6 +1007,27 @@ EOD
 	    'Geocode of White House returned expected longitude';
     }
 }
+
+method clear => undef, 'Clear the observing list';
+
+{
+    my $tle = Astro::Coord::ECI::TLE->new(
+	name	=> 'Dummy',
+	id	=> 666,
+    )->geodetic( deg2rad( 40 ), deg2rad( -75 ), 200 );
+
+    method add => $tle, TRUE, 'Add a TLE';
+
+    method list => <<'EOD', 'Our object is in the list';
+   OID Name                     Epoch               Period
+   666 Dummy                     40.0000  -75.0000   200.0
+EOD
+
+}
+
+execute 'perl -eval Fubar', '"Fubar"', 'perl -eval';
+
+execute 'perl t/whole_app_file', 'OK', 'perl -noeval';
 
 method __TEST__frame_stack_depth => 1, 'Object frame stack is clean';
 

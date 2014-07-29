@@ -44,17 +44,27 @@ require_ok 'Astro::App::Satpass2::Copier'
 can_ok 'Astro::App::Satpass2::Copier', @copier_methods
     or BAIL_OUT;
 
-require_ok 'Astro::App::Satpass2::Macro';
+require_ok 'Astro::App::Satpass2::Locale'
+    or BAIL_OUT;
 
-require_ok 'Astro::App::Satpass2::Macro::Command';
+require_ok 'Astro::App::Satpass2::Locale::C'
+    or BAIL_OUT;
+
+require_ok 'Astro::App::Satpass2::Macro'
+    or BAIL_OUT;
+
+require_ok 'Astro::App::Satpass2::Macro::Command'
+    or BAIL_OUT;
 
 isa_ok 'Astro::App::Satpass2::Macro::Command',
     'Astro::App::Satpass2::Macro';
 
-require_ok 'Astro::App::Satpass2::Macro::Code';
+require_ok 'Astro::App::Satpass2::Macro::Code'
+    or BAIL_OUT;
 
 isa_ok 'Astro::App::Satpass2::Macro::Code',
-    'Astro::App::Satpass2::Macro';
+    'Astro::App::Satpass2::Macro'
+    or BAIL_OUT;
 
 require_ok 'Astro::App::Satpass2::FormatTime'
     or BAIL_OUT;
@@ -186,20 +196,6 @@ instantiate 'Astro::App::Satpass2::Wrap::Array', [],
     'Astro::App::Satpass2::Wrap::Array'
     or BAIL_OUT;
 
-require_ok 'Astro::App::Satpass2::Format::Template::Provider'
-    or BAIL_OUT;
-
-isa_ok 'Astro::App::Satpass2::Format::Template::Provider',
-    'Template::Provider'
-    or BAIL_OUT;
-
-can_ok 'Astro::App::Satpass2::Format::Template::Provider',
-    qw{ fetch load }
-    or BAIL_OUT;
-
-instantiate 'Astro::App::Satpass2::Format::Template::Provider'
-    or BAIL_OUT;
-
 require_ok 'Astro::App::Satpass2::Format::Template'
     or BAIL_OUT;
 
@@ -281,7 +277,7 @@ SKIP: {
     my $tests = 1;
 
     $date_manip_delegate
-	or skip "Unable to load Date::Manip", $tests;
+	or skip 'Unable to load Date::Manip', $tests;
 
     instantiate 'Astro::App::Satpass2::ParseTime',
 	class => 'Astro::App::Satpass2::ParseTime::Date::Manip',

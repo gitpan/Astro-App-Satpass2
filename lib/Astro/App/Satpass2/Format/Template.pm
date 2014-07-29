@@ -5,8 +5,9 @@ use warnings;
 
 use base qw{ Astro::App::Satpass2::Format };
 
-use Astro::App::Satpass2::Format::Template::Provider;
+use Astro::App::Satpass2::Locale qw{ __localize };
 # use Astro::App::Satpass2::FormatValue;
+use Astro::App::Satpass2::FormatValue::Formatter;
 use Astro::App::Satpass2::Utils qw{ instance };
 use Astro::App::Satpass2::Wrap::Array;
 use Astro::Coord::ECI::TLE 0.059 qw{ :constants };
@@ -20,323 +21,20 @@ use Template::Provider;
 use Text::Abbrev;
 use Text::Wrap qw{ wrap };
 
-our $VERSION = '0.020';
-
-my %template_definitions = (
-
-    # Local coordinates
-
-    az_rng	=> <<'EOD',
-[% data.azimuth( arg, bearing = 2 ) %]
-    [%= data.range( arg ) -%]
-EOD
-
-    azel	=> <<'EOD',
-[% data.elevation( arg ) %]
-    [%= data.azimuth( arg, bearing = 2 ) -%]
-EOD
-
-    azel_rng	=> <<'EOD',
-[% data.elevation( arg ) %]
-    [%= data.azimuth( arg, bearing = 2 ) %]
-    [%= data.range( arg ) -%]
-EOD
-
-    equatorial	=> <<'EOD',
-[% data.right_ascension( arg ) %]
-    [%= data.declination( arg ) -%]
-EOD
-
-    equatorial_rng	=> <<'EOD',
-[% data.right_ascension( arg ) %]
-    [%= data.declination( arg ) %]
-    [%= data.range( arg ) -%]
-EOD
-
-    # Main templates
-
-    almanac	=> <<'EOD',
-[% UNLESS data %]
-    [%- SET data = sp.almanac( arg ) %]
-[%- END %]
-[%- FOREACH item IN data %]
-    [%- item.date %] [% item.time %]
-        [%= item.almanac( units = 'description' ) %]
-[% END -%]
-EOD
-
-    flare	=> <<'EOD',
-[% UNLESS data %]
-    [%- SET data = sp.flare( arg ) %]
-[%- END %]
-[%- CALL title.title_gravity( TITLE_GRAVITY_BOTTOM ) %]
-[%- WHILE title.more_title_lines %]
-    [%- title.time %]
-        [%= title.name( width = 12 ) %]
-        [%= title.local_coord %]
-        [%= title.magnitude %]
-        [%= title.angle( 'Degrees From Sun' ) %]
-        [%= title.azimuth( 'Center Azimuth', bearing = 2 ) %]
-        [%= title.range( 'Center Range', width = 6 ) %]
-
-[%- END %]
-[%- prior_date = '' -%]
-[% FOR item IN data %]
-    [%- center = item.center %]
-    [%- current_date = item.date %]
-    [%- IF prior_date != current_date %]
-        [%- prior_date = current_date %]
-        [%- current_date %]
-
-    [%- END %]
-    [%- item.time %]
-        [%= item.name( units = 'title_case', width = 12 ) %]
-        [%= item.local_coord %]
-        [%= item.magnitude %]
-        [%= IF 'day' == item.type( width = '' ) %]
-            [%- item.appulse.angle %]
-        [%- ELSE %]
-            [%- item.appulse.angle( literal = 'night' ) %]
-        [%- END %]
-        [%= center.azimuth( bearing = 2 ) %]
-        [%= center.range( width = 6 ) %]
-[% END -%]
-EOD
-
-    list => <<'EOD',
-[% UNLESS data %]
-    [%- SET data = sp.list( arg ) %]
-[%- END %]
-[%- CALL title.title_gravity( TITLE_GRAVITY_BOTTOM ) %]
-[%- WHILE title.more_title_lines %]
-    [%- title.list %]
-[% END %]
-[%- FOR item IN data %]
-    [%- item.list( arg ) %]
-[% END -%]
-EOD
-
-    list_inertial => <<'EOD',
-[% data.oid( align_left = 0, arg ) %] [% data.name( arg ) %]
-    [%= data.epoch( arg ) %]
-    [%= data.period( arg, align_left = 1 ) -%]
-EOD
-
-    list_fixed	=> <<'EOD',
-[% data.oid( align_left = 0, arg ) %] [% data.name( arg ) %]
-    [%= data.latitude( arg ) %]
-    [%= data.longitude( arg ) %] [% data.altitude( arg ) -%]
-EOD
-
-
-    location	=> <<'EOD',
-[% UNLESS data %]
-    [%- SET data = sp.location( arg ) %]
-[%- END -%]
-Location: [% data.name( width = '' ) %]
-          Latitude [% data.latitude( places = 4,
-                width = '' ) %], longitude
-            [%= data.longitude( places = 4, width = '' )
-                %], height
-            [%= data.altitude( units = 'meters', places = 0,
-                width = '' ) %] m
-EOD
-
-    pass	=> <<'EOD',
-[% UNLESS data %]
-    [%- SET data = sp.pass( arg ) %]
-[%- END %]
-[%- CALL title.title_gravity( TITLE_GRAVITY_BOTTOM ) %]
-[%- SET do_mag = sp.want_pass_variant( 'brightest' ) %]
-[%- WHILE title.more_title_lines %]
-    [%- title.time( align_left = 0 ) %]
-        [%= title.local_coord %]
-        [%= title.latitude %]
-        [%= title.longitude %]
-        [%= title.altitude %]
-        [%= title.illumination %]
-	[%- IF do_mag %]
-	    [%= title.magnitude %]
-	[%- END %]
-        [%= title.event( width = '' ) %]
-
-[%- END %]
-[%- FOR pass IN data %]
-    [%- events = pass.events %]
-    [%- evt = events.first %]
-
-    [%- evt.date %]    [% evt.oid %] - [% evt.name( width = '' ) %]
-
-    [%- FOREACH evt IN events %]
-        [%- evt.time %]
-            [%= evt.local_coord %]
-            [%= evt.latitude %]
-            [%= evt.longitude %]
-            [%= evt.altitude %]
-            [%= evt.illumination %]
-	    [%- IF do_mag %]
-		[%= evt.magnitude %]
-	    [%- END %]
-            [%= evt.event( width = '' ) %]
-        [%- IF 'apls' == evt.event( units = 'string', width = '' ) %]
-            [%- apls = evt.appulse %]
-
-            [%- title.time( '' ) %]
-                [%= apls.local_coord %]
-                [%= apls.angle %] degrees from [% apls.name( width = '' ) %]
-        [%- END %]
-
-    [%- END %]
-[%- END -%]
-EOD
-
-    pass_events	=> <<'EOD',
-[% UNLESS data %]
-    [%- SET data = sp.pass( arg ) %]
-[%- END %]
-[%- CALL title.title_gravity( TITLE_GRAVITY_BOTTOM ) %]
-[%- WHILE title.more_title_lines %]
-    [%- title.date %] [% title.time %]
-        [%= title.oid %] [% title.event %]
-        [%= title.illumination %] [% title.local_coord %]
-
-[%- END %]
-[%- FOREACH evt IN data.events %]
-    [%- evt.date %] [% evt.time %]
-        [%= evt.oid %] [% evt.event %]
-        [%= evt.illumination %] [% evt.local_coord %]
-[% END -%]
-EOD
-
-    phase	=> <<'EOD',
-[% UNLESS data %]
-    [%- SET data = sp.phase( arg ) %]
-[%- END %]
-[%- CALL title.title_gravity( TITLE_GRAVITY_BOTTOM ) %]
-[%- WHILE title.more_title_lines %]
-    [%- title.date( align_left = 0 ) %]
-        [%= title.time( align_left = 0 ) %]
-        [%= title.name( width = 8, align_left = 0 ) %]
-        [%= title.phase( places = 0, width = 4 ) %]
-        [%= title.phase( width = 16, units = 'phase',
-            align_left = 1 ) %]
-        [%= title.fraction_lit( title = 'Lit', places = 0, width = 4,
-            units = 'percent', align_left = 0 ) %]
-
-[%- END %]
-[%- FOR item IN data %]
-    [%- item.date %] [% item.time %]
-        [%= item.name( width = 8, align_left = 0 ) %]
-        [%= item.phase( places = 0, width = 4 ) %]
-        [%= item.phase( width = 16, units = 'phase',
-            align_left = 1 ) %]
-        [%= item.fraction_lit( places = 0, width = 4,
-            units = 'percent' ) %]%
-[% END -%]
-EOD
-
-    position	=> <<'EOD',
-[% UNLESS data %]
-    [%- SET data = sp.position( arg ) %]
-[%- END %]
-[%- CALL title.title_gravity( TITLE_GRAVITY_BOTTOM ) %]
-[%- data.date %] [% data.time %]
-[%- WHILE title.more_title_lines %]
-    [%- title.name( align_left = 0, width = 16 ) %]
-        [%= title.local_coord %]
-        [%= title.epoch( align_left = 0 ) %]
-        [%= title.illumination %]
-
-[%- END %]
-[%- FOR item IN data.bodies() %]
-    [%- item.name( width = 16, missing = 'oid', align_left = 0 ) %]
-        [%= item.local_coord %]
-        [%= item.epoch( align_left = 0 ) %]
-        [%= item.illumination %]
-
-    [%- FOR refl IN item.reflections() %]
-        [%- item.name( literal = '', width = 16 ) %]
-            [%= item.local_coord( literal = '' ) %] MMA
-        [%- IF refl.status( width = '' ) %]
-            [%= refl.mma( width = '' ) %] [% refl.status( width = '' ) %]
-        [%- ELSE %]
-            [%= refl.mma( width = '' ) %] mirror angle [%
-                refl.angle( width = '' ) %] magnitude [%
-                refl.magnitude( width = '' ) %]
-        [%- END %]
-
-    [%- END -%]
-[% END -%]
-EOD
-
-    tle		=> <<'EOD',
-[% UNLESS data %]
-    [%- SET data = sp.tle( arg ) %]
-[%- END %]
-[%- FOR item IN data %]
-    [%- item.tle -%]
-[% END -%]
-EOD
-
-    tle_verbose	=> <<'EOD',
-[% UNLESS data %]
-    [%- SET data = sp.tle( arg ) %]
-[%- END %]
-[%- CALL title.fixed_width( 0 ) -%]
-[% FOR item IN data -%]
-[% CALL item.fixed_width( 0 ) -%]
-[% title.oid %]: [% item.oid %]
-    [% title.name %]: [% item.name %]
-    [% title.international %]: [% item.international %]
-    [% title.epoch %]: [% item.epoch( units = 'zulu' ) %] GMT
-    [% title.effective_date %]: [%
-        item.effective_date( units = 'zulu',
-        missing = '<none>' ) %] GMT
-    [% title.classification %]: [% item.classification %]
-    [% title.mean_motion %]: [% item.mean_motion( places = 8 )
-        %] degrees/minute
-    [% title.first_derivative %]: [%
-        item.first_derivative( places = 8 ) %] degrees/minute squared
-    [% title.second_derivative %]: [%
-        item.second_derivative( places = 5 ) %] degrees/minute cubed
-    [% title.b_star_drag %]: [% item.b_star_drag( places = 5 ) %]
-    [% title.ephemeris_type %]: [% item.ephemeris_type %]
-    [% title.inclination %]: [% item.inclination( places = 4 ) %] degrees
-    [% title.ascending_node %]: [% item.ascending_node(
-        places = 0 ) %] in right ascension
-    [% title.eccentricity %]: [% item.eccentricity( places = 7 ) %]
-    [% title.argument_of_perigee %]: [%
-        item.argument_of_perigee( places = 4 )
-        %] degrees from ascending node
-    [% title.mean_anomaly %]: [%
-        item.mean_anomaly( places = 4 ) %] degrees
-    [% title.element_number %]: [% item.element_number %]
-    [% title.revolutions_at_epoch %]: [% item.revolutions_at_epoch %]
-    [% title.period %]: [% item.period %]
-    [% title.semimajor %]: [% item.semimajor( places = 1 ) %] kilometers
-    [% title.perigee %]: [% item.perigee( places = 1 ) %] kilometers
-    [% title.apogee %]: [% item.apogee( places = 1 ) %] kilometers
-[% END -%]
-EOD
-
-);
-
+our $VERSION = '0.020_01';
 
 sub new {
     my ($class, @args) = @_;
     my $self = $class->SUPER::new( @args );
 
-    $self->{template} =
-	Astro::App::Satpass2::Format::Template::Provider->new()
-	or $self->warner()->weep( 'Failed to instantiate provider' );
+    # As of 0.020_002 the template definitions are in the
+    # locale system. The attribute simply holds modifications.
+    $self->{canned_template} = {};
 
     $self->_new_tt( $self->permissive() );
 
-    foreach my $name ( keys %template_definitions ) {
-	$self->template( $name => $template_definitions{ $name } );
-    }
-
     $self->{default} = {};
+    $self->{formatter_method} = {};
 
     return $self;
 }
@@ -344,9 +42,9 @@ sub new {
 sub _new_tt {
     my ( $self, $permissive ) = @_;
 
-    $self->{tt} = Template->new( {
+    $self->{tt} = Template->new(
+	{
 	    LOAD_TEMPLATES => [
-		$self->{template},
 		Template::Provider->new(
 		    ABSOLUTE	=> $permissive,
 		    RELATIVE	=> $permissive,
@@ -357,6 +55,30 @@ sub _new_tt {
 	"Failed to instantate tt: $Template::ERROR" );
 
     return;
+}
+
+sub add_formatter_method {
+    # TODO I want the arguments to be ( $self, $fmtr ), but for the
+    # moment I have to live with an unreleased version that passed the
+    # name as the first argument. I will go to the desired signature as
+    # soon as I get this version installed on my own machine.
+    my ( $self, @arg ) = @_;
+    my $fmtr = 'HASH' eq ref $arg[0] ? $arg[0] : $arg[1];
+    'HASH' eq ref $fmtr
+	or $self->warner()->wail(
+	'Formatter definition must be a HASH reference' );
+    defined( my $fmtr_name = $fmtr->{name} )
+	or $self->warner()->wail(
+	    'Formatter definition must have {name} defined' );
+    $self->{formatter_method}{$fmtr_name}
+	and $self->{warner}->wail(
+	"Formatter method $fmtr_name already exists" );
+    Astro::App::Satpass2::FormatValue->can( $fmtr_name )
+	and $self->{warner}->wail(
+	"Formatter $fmtr_name can not override built-in formatter" );
+    $self->{formatter_method}{$fmtr_name} =
+    Astro::App::Satpass2::FormatValue::Formatter->new( $fmtr );
+    return $self;
 }
 
 sub attribute_names {
@@ -372,17 +94,24 @@ sub config {
 
     # TODO support for the {default} key.
 
-    foreach my $name ( sort
-	$self->{template}->__satpass2_defined_templates() ) {
-	my $template = $self->{template}->__satpass2_template( $name );
-	$args{changes}
-	    and defined $template
-	    and $template eq $template_definitions{$name}
-	    and next;
-	push @data, [ template => $name, $template ];
+    foreach my $name (
+	sort $args{changes} ?
+	    keys %{ $self->{canned_template} } :
+	    $self->__list_templates()
+    ) {
+	push @data, [ template => $name,
+	    $self->{canned_template}{$name} ];
     }
 
     return wantarray ? @data : \@data;
+}
+
+# Return the names of all known templates, in no particular order. No
+# arguments other than the invocant.
+sub __list_templates {
+    my ( $self ) = @_;
+    return ( _uniq( map { keys %{ $_ } } $self->{canned_template},
+	    __localize( '+template', {} ) ) );
 }
 
 sub __default {
@@ -405,12 +134,17 @@ sub format : method {	## no critic (ProhibitBuiltInHomonyms)
     my ( $self, %data ) = @_;
 
     exists $data{data}
-	and $data{data} = $self->_wrap( $data{data} );
+	and $data{data} = $self->_wrap(
+	    data	=> $data{data},
+	    report	=> $data{template},
+	);
 
     _is_format() and return $data{data};
 
-    my $template = delete $data{template}
+    my $tplt = delete $data{template}
 	or $self->warner()->wail( 'template argument is required' );
+
+    my $tplt_name = 'SCALAR' eq ref $tplt ? ${ $tplt } : $tplt;
 
     $data{default} ||= $self->__default();
 
@@ -424,14 +158,23 @@ sub format : method {	## no critic (ProhibitBuiltInHomonyms)
 
     if ( $data{time} ) {
 	ref $data{time}
-	    or $data{time} = $self->_wrap( { time => $data{time} } );
+	    or $data{time} = $self->_wrap(
+		data => { time => $data{time} },
+		report	=> $tplt_name,
+	    );
     } else {
-	$data{time} = $self->_wrap( { time => time } );
+	$data{time} = $self->_wrap(
+	    data	=> { time => time },
+	    report	=> $tplt_name,
+	);
     }
 
     my $value_formatter = $self->value_formatter();
 
-    $data{title} = $self->_wrap( undef, $data{default} );
+    $data{title} = $self->_wrap(
+	default	=> $data{default},
+	report	=> $tplt_name,
+    );
     $data{TITLE_GRAVITY_BOTTOM} =
 	$value_formatter->TITLE_GRAVITY_BOTTOM;
     $data{TITLE_GRAVITY_TOP} =
@@ -457,7 +200,11 @@ sub format : method {	## no critic (ProhibitBuiltInHomonyms)
 	return;
     };
 
-    my $output = $self->_process( $template, %data );
+    $data{localize} = sub {
+	return _localize( $tplt_name, @_ );
+    };
+
+    my $output = $self->_process( $tplt, %data );
 
     # TODO would love to use \h here, but that needs 5.10.
     $output =~ s/ [ \t]+ (?= \n ) //sxmg;
@@ -481,16 +228,13 @@ sub local_coord {
     my ( $self, @args ) = @_;
     if ( @args ) {
 	my $val = $args[0];
-	defined $val or $val = $self->DEFAULT_LOCAL_COORD;
-	# Chicken-and-egg problem: we have to get an object from
-	# SUPER::new before we can add the template provider, but
-	# SUPER::new sets the local coordinates. So if there is no
-	# provider we check the hash it is initialized from.
-	$self->{template} ?
-	    $self->{template}->__satpass2_template( $val ) :
-	    $template_definitions{$val}
+	defined $val
+	    or $val = $self->DEFAULT_LOCAL_COORD;
+
+	defined $self->template( $val )
 	    or $self->warner()->wail(
-		"Unknown local coordinate specification '$val'" );
+		'Unknown local coordinate specification', $val );
+
 	return $self->SUPER::local_coord( @args );
     } else {
 	return $self->SUPER::local_coord();
@@ -516,10 +260,22 @@ sub template {
 	or $self->warner()->wail( 'Template name not specified' );
 
     if ( @value ) {
-	$self->{template}->__satpass2_template( $name, $value[0] );
+	my $tplt_text;
+	if ( ! defined $value[0]
+	    || defined( $tplt_text = __localize( '+template',
+		$value[0] ) )
+	    && $value[0] eq $tplt_text
+	) {
+	    delete $self->{canned_template}{$name};
+	} else {
+	    $self->{canned_template}{$name} = $value[0];
+	}
+
 	return $self;
     } else {
-        return scalar $self->{template}->__satpass2_template( $name );
+	defined $self->{canned_template}{$name}
+	    and return $self->{canned_template}{$name};
+	return __localize( '+template', $name, undef );
     }
 }
 
@@ -544,7 +300,7 @@ sub _all_events {
     @events or return;
     @events = sort { $a->{time} <=> $b->{time} } @events;
 
-    return [ map { $self->_wrap( $_ ) } @events ];
+    return [ map { $self->_wrap( data => $_ ) } @events ];
 }
 
 #	_is_format()
@@ -563,6 +319,16 @@ sub _is_format {
     return;
 }
 
+sub _localize {
+    my ( $report, $source, $default ) = @_;
+    defined $default
+	or $default = $source;
+    defined $report
+	or return defined $source ? $source : $default;
+
+    return scalar __localize( "-$report", 'string', $source, $source );
+}
+
 sub _process {
     my ( $self, $tplt, %arg ) = @_;
     'ARRAY' eq ref $arg{arg}
@@ -570,13 +336,31 @@ sub _process {
 	$arg{arg} );
     my $output;
     my $tt = $self->{tt};
+
+    my $tplt_text;
+    not ref $tplt
+	and defined( $tplt_text = $self->template( $tplt ) )
+	and $tplt = \$tplt_text;
+
     $tt->process( $tplt, \%arg, \$output )
 	or $self->warner()->wail( $tt->error() );
     return $output;
 }
 
+# Cribbed shamelessly from List::MoreUtils. The author reserves the
+# right to relocate, rename or otherwise mung with this without notice
+# to anyone. Caveat user.
+sub _uniq {
+    my %found;
+    return ( grep { ! $found{$_}++ } @_ );
+}
+
 sub _wrap {
-    my ( $self, $data, $default ) = @_;
+    my ( $self, %arg ) = @_;
+
+    my $data = $arg{data};
+    my $default = $arg{default};
+    my $report = $arg{report};
 
     my $title = ! $data;
     $data ||= {};
@@ -601,7 +385,13 @@ sub _wrap {
 		return $self->_process( $self->local_coord(),
 		    data	=> $data,
 		    arg		=> \@arg,
-		    title	=> $self->_wrap( undef, $default ),
+		    title	=> $self->_wrap(
+			default	=> $default,
+			report	=> $report,
+		    ),
+		    localize	=> sub {
+			return _localize( $report, @_ );
+		    },
 		);
 	    },
 	    list_formatter => sub {
@@ -611,16 +401,24 @@ sub _wrap {
 		return $self->_process( "list_$list_type",
 		    data	=> $data,
 		    arg		=> \@arg,
-		    title	=> $self->_wrap( undef, $default ),
+		    title	=> $self->_wrap(
+			default => $default,
+			report	=> $report,
+		    ),
 		);
 	    },
+	    report	=> $report,
 	    title	=> $title,
 	    warner	=> $self->warner(),
 	);
+	$data->add_formatter_method( values %{ $self->{formatter_method} } );
     } elsif ( 'ARRAY' eq ref $data ) {
-	$data = [ map { $self->_wrap( $_ ) } @{ $data } ];
+	$data = [ map { $self->_wrap( data => $_, report => $report ) } @{ $data } ];
     } elsif ( embodies( $data, 'Astro::Coord::ECI' ) ) {
-	$data = $self->_wrap( { body => $data } );
+	$data = $self->_wrap(
+	    data	=> { body => $data },
+	    report	=> $report,
+	);
     }
 
     return $data;
@@ -826,6 +624,19 @@ If the load succeeds, an object is instantiated by calling C<new()> on
 the loaded class name, and that object is returned. If no class can be
 loaded an exception is thrown.
 
+=item localize
+
+This is a code reference to localization code. It takes two arguments:
+the string to localize, and an optional default if the string can not be
+localized for some reason. The second argument defaults to the first.  A
+typical use would be something like
+
+ [% localize( 'Location' ) %]
+
+The localization comes from the locale system, specifically from key
+C<{"-$template"}{string}{$string}>, where C<$template> is the name of
+the main template being used, and C<$string> is the string to localize.
+
 =item provider
 
 This is simply the value returned by L<provider()|/provider>.
@@ -897,6 +708,26 @@ You may specify an argument to C<fixed_width()>.
 Nothing is returned.
 
 =back
+
+=head3 add_formatter_method
+
+ $tplt->add_formatter_method( \%definition );
+
+This experimental method adds the named formatter to any
+L<Astro::App::Satpass2::FormatValue|Astro::App::Satpass2::FormatValue>
+objects created. The argument is a reference to a hash that defines the
+format. The name of the formatter must appear in the C<{name}> element
+of the hash, and this name may not duplicate any formatter built in to
+L<Astro::App::Satpass2::FormatValue|Astro::App::Satpass2::FormatValue>,
+nor any formatter previously added by this method. The other elements in
+the hash are purposefully left undocumented until the whole business of
+adding a formatter becomes considerably less wooly and experimental.
+
+What this really does is instantiate a
+L<Astro::App::Satpass2::FormatValue::Formatter|Astro::App::Satpass2::FormatValue::Formatter>
+and add that object to any
+L<Astro::App::Satpass2::FormatValue|Astro::App::Satpass2::FormatValue>
+objects created.
 
 =head2 Templates
 
