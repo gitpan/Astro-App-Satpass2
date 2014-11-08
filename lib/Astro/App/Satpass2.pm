@@ -51,7 +51,7 @@ BEGIN {
 	};
 }
 
-our $VERSION = '0.021';
+our $VERSION = '0.022';
 
 # The following 'cute' code is so that we do not determine whether we
 # actually have optional modules until we really need them, and yet do
@@ -223,11 +223,6 @@ my %mutator = (
     height => \&_set_distance_meters,
     horizon => \&_set_angle,
     latitude => \&_set_angle,
-    lit => sub {
-	my ( $self, $name, $val ) = @_;
-	$self->{$name} = $val ? 1 : 0;
-	return $val;
-    },
     local_coord => \&_set_formatter_attribute,
     location => \&_set_unmodified,
     longitude => \&_set_angle,
@@ -265,9 +260,6 @@ my %accessor = (
     desired_equinox_dynamical => \&_get_formatter_attribute,
     geocoder => \&_get_geocoder,
     gmt => \&_get_formatter_attribute,
-    lit => sub {
-	return $_[0]->get( 'edge_of_earths_shadow' ) ? 1 : 0;
-    },
     local_coord => \&_get_formatter_attribute,
     perltime => \&_get_time_parser_attribute,
     spacetrack => \&_get_spacetrack,
@@ -2593,7 +2585,8 @@ sub station {
 	    }
 
 	} else {
-	    Astro::Coord::ECI::TLE->status ($verb, @args);
+	    $output .= '';	# Don't want it to be undef.
+	    $output .= Astro::Coord::ECI::TLE->status ($verb, @args);
 	}
 
 	return $output;
@@ -2892,7 +2885,6 @@ sub _attribute_exists {
 	    desired_equinox_dynamical	=> 0,
 	    explicit_macro_delete	=> 0,
 	    gmt		=> 0,
-	    lit		=> 3,
 	    local_coord	=> 0,
 	    perltime	=> 0,
 	    time_format	=> 0,
@@ -4929,6 +4921,13 @@ L<geocode()|/geocode> method you do not need this module.
 This module is used by the Tom Tom geocoder for the
 C<geocode()|/geocode> method.  If you are not interested in using the
 L<geocode()|/geocode> method you do not need this module.
+
+B<NOTE> that as of November 8 2014 it appears that TomTom has retracted
+the underlying service. Under the circumstances I am suspending support
+for TomTom geocoding effective with the release of version 0.022.
+If the situation is not resolved favorably by May 1 2015 I will retract
+support for this module. If it is resolved unfavorably I will retract
+support as soon as I become aware of the fact.
 
 =item L<Geo::WebService::Elevation::USGS|Geo::WebService::Elevation::USGS>
 
@@ -6998,13 +6997,6 @@ See L</SPECIFYING ANGLES> for ways to specify an angle. This attribute
 is returned in decimal degrees.
 
 There is no default; you must specify a value.
-
-=head2 lit
-
-This Boolean attribute is deprecated, and produces an exception on
-access. On the first release after October 1 2014 it will be removed
-completely. You should use the
-L<edge_of_earths_shadow|/edge_of_earths_shadow> attribute instead.
 
 =head2 local_coord
 
